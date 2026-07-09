@@ -1,0 +1,46 @@
+name: apply-api-options-call-fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-api-options-call-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch API activate call
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('public/index.php')
+          text = path.read_text()
+          old = '        $result = InstallProtocolManager::activate($server, $protocol, []);'
+          new = '        $result = InstallProtocolManager::activate($server, $protocol, $installOptions);'
+          marker = "$installOptions = [];"
+          if new not in text:
+              if marker not in text:
+                  raise SystemExit('installOptions block missing')
+              if old not in text:
+                  raise SystemExit('activate call not found')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - name: Validate PHP syntax
+        run: php -l public/index.php
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add public/index.php
+          git commit -m "Pass API install options to protocol activation"
+          git push
