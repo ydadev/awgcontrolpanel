@@ -14,18 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply sudo wrapper patch
+      - name: Fix password newline escape
         run: |
           python3 <<'PY'
           from pathlib import Path
           path = Path('inc/VpnServer.php')
           text = path.read_text()
-          needle = """            $needsSudo = ($sudo ?? false) && strtolower((string) ($this->data['username'] ?? '')) !== 'root';\n            if ($needsSudo) {\n                // Suppress sudo prompt text to keep command output machine-parseable.\n                $command = \"echo '{$this->data['password']}' | sudo -S -p '' \" . $command;\n            }\n\n            $preparedCommand = $pathPrefix . $command;\n"""
-          replacement = """            $needsSudo = ($sudo ?? false) && strtolower((string) ($this->data['username'] ?? '')) !== 'root';\n            $preparedCommand = $pathPrefix . $command;\n            if ($needsSudo) {\n                // Suppress sudo prompt text and run the whole payload under sudo.\n                // This keeps heredoc/multiline scripts from stealing sudo's stdin.\n                $passwordArg = escapeshellarg((string) $this->data['password'] . \"\\\\n\");\n                $payloadArg = escapeshellarg($preparedCommand);\n                $preparedCommand = \"printf %s {$passwordArg} | sudo -S -p '' bash -lc {$payloadArg}\";\n            }\n\n"""
-          if replacement not in text:
-              if needle not in text:
-                  raise SystemExit('target block not found')
-              text = text.replace(needle, replacement, 1)
+          bad = '$passwordArg = escapeshellarg((string) $this->data[\'password\'] . "\\\\n");'
+          good = '$passwordArg = escapeshellarg((string) $this->data[\'password\'] . "\\n");'
+          if bad in text:
+              text = text.replace(bad, good, 1)
+          elif good not in text:
+              raise SystemExit('passwordArg line not found')
           path.write_text(text)
           PY
       - name: Validate PHP syntax
@@ -39,5 +39,5 @@ jobs:
             exit 0
           fi
           git add inc/VpnServer.php
-          git commit -m "Fix sudo execution for multiline SSH commands"
+          git commit -m "Fix sudo password newline escape"
           git push
