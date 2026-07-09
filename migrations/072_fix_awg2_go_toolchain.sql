@@ -10,6 +10,9 @@ SET install_script = REPLACE(
 fi
 if [ -f /opt/amnezia/awg2/src/Dockerfile ]; then
   sed -i -E "s#^FROM[[:space:]]+golang(:[^[:space:]]*)?[[:space:]]+[aA][sS][[:space:]]+awg#FROM golang:1.25-alpine AS awg#" /opt/amnezia/awg2/src/Dockerfile
+  if ! grep -q "ENV CGO_ENABLED=1" /opt/amnezia/awg2/src/Dockerfile; then
+    sed -i "/^FROM golang:1.25-alpine AS awg/a ENV CGO_ENABLED=1\\nRUN apk add --no-cache build-base" /opt/amnezia/awg2/src/Dockerfile
+  fi
 fi
 docker build --no-cache -t amnezia-awg2 /opt/amnezia/awg2/src'
 )
