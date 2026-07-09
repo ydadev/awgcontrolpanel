@@ -813,29 +813,28 @@ class VpnClient
      */
     private static function generateClientKeys(array $serverData, string $clientName): array
     {
-        $containerName = $serverData['container_name'];
+        $containerName = (string) ($serverData['container_name'] ?? '');
         $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
         $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
         $wgTool = $isAwg2 ? 'awg' : 'wg';
 
-        $cmd = sprintf(
-            "docker exec -i %s sh -lc 'set -e; umask 077; priv=\$(%s genkey | tr -d " . '"' . "\\r\\n" . '"' . "); [ -n \"\$priv\" ] || { echo empty_private_key; exit 1; }; pub=\$(printf " . '"' . "%%s\\n" . '"' . " \"\$priv\" | %s pubkey | tr -d " . '"' . "\\r\\n" . '"' . "); [ -n \"\$pub\" ] || { echo empty_public_key; exit 1; }; printf " . '"' . "%%s\\n---\\n%%s\\n" . '"' . " \"\$priv\" \"\$pub\"'",
-            escapeshellarg($containerName),
+        $keygenScript = sprintf(
+            'set -e; umask 077; priv=$(%s genkey | tr -d "\r\n"); [ -n "$priv" ] || { echo empty_private_key; exit 1; }; pub=$(printf "%%s\n" "$priv" | %s pubkey | tr -d "\r\n"); [ -n "$pub" ] || { echo empty_public_key; exit 1; }; printf "%%s\n---\n%%s\n" "$priv" "$pub"',
             $wgTool,
             $wgTool
         );
+        if ($protocolSlug === 'wireguard-standard') {
+            $cmd = 'sh -lc ' . escapeshellarg($keygenScript);
+        } else {
+            $cmd = sprintf(
+                'docker exec -i %s sh -lc %s',
+                escapeshellarg($containerName),
+                escapeshellarg($keygenScript)
+            );
+        }
 
-        $escaped = escapeshellarg($cmd);
-        $sshCmd = sprintf(
-            "sshpass -p %s ssh -p %d -q -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no %s@%s %s 2>&1",
-            escapeshellarg($serverData['password']),
-            $serverData['port'],
-            $serverData['username'],
-            $serverData['host'],
-            $escaped
-        );
-
-        $out = (string) shell_exec($sshCmd);
+        $server = new VpnServer((int) ($serverData['id'] ?? 0));
+        $out = (string) $server->executeCommand($cmd, true);
         $parts = explode("---", trim($out));
 
         if (count($parts) < 2) {
@@ -1279,10 +1278,37 @@ class VpnClient
      */
     public static function addClientToServer(array $serverData, string $publicKey, string $clientIP): void
     {
-        $containerName = $serverData['container_name'];
+        $containerName = (string) ($serverData['container_name'] ?? '');
         $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
         $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
         $configDir = '/opt/amnezia/awg';
+        $presharedKey = (string) ($serverData['preshared_key'] ?? '');
+
+        if ($protocolSlug === 'wireguard-standard') {
+            $publicKey = trim($publicKey);
+            if ($publicKey === '') {
+                throw new Exception('Refusing to add client with empty public key');
+            }
+            if ($presharedKey === '') {
+                throw new Exception('Refusing to add WireGuard client without preshared key');
+            }
+
+            $peerBlock = "\n[Peer]\n";
+            $peerBlock .= "PublicKey = {$publicKey}\n";
+            $peerBlock .= "PresharedKey = {$presharedKey}\n";
+            $peerBlock .= "AllowedIPs = {$clientIP}/32\n";
+
+            $script = "set -e\n";
+            $script .= "tmp=\$(mktemp)\n";
+            $script .= "printf '%s\n' " . escapeshellarg($presharedKey) . " > \"\$tmp\"\n";
+            $script .= "wg set wg0 peer " . escapeshellarg($publicKey) . " preshared-key \"\$tmp\" allowed-ips " . escapeshellarg($clientIP . '/32') . "\n";
+            $script .= "rm -f \"\$tmp\"\n";
+            $script .= "cat >> /etc/wireguard/wg0.conf <<'EOF'\n" . $peerBlock . "EOF\n";
+
+            $server = new VpnServer((int) ($serverData['id'] ?? 0));
+            $server->executeCommand('sh -lc ' . escapeshellarg($script), true);
+            return;
+        }
 
         // AWG2: try awg0.conf first (standard), fall back to wg0.conf (legacy panel installs)
         $configFile = $isAwg2 ? 'awg0.conf' : 'wg0.conf';
@@ -1293,7 +1319,6 @@ class VpnClient
         // Interface name matches config filename (wg0.conf -> wg0, awg0.conf -> awg0)
         $ifaceName = str_replace('.conf', '', $configFile);
 
-        $presharedKey = $serverData['preshared_key'];
         $publicKey = trim($publicKey);
 
         if ($publicKey === '') {
