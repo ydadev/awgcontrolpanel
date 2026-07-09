@@ -1,0 +1,64 @@
+name: apply-vpnserver-sudo-fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-vpnserver-sudo-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch VpnServer sudo command wrapping
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('inc/VpnServer.php')
+          text = path.read_text()
+          old = '''        } else {
+            $needsSudo = ($sudo ?? false) && strtolower((string) ($this->data['username'] ?? '')) !== 'root';
+            if ($needsSudo) {
+                // Suppress sudo prompt text to keep command output machine-parseable.
+                $command = "echo '{$this->data['password']}' | sudo -S -p '' " . $command;
+            }
+
+            $preparedCommand = $pathPrefix . $command;
+            $escapedCommand = escapeshellarg($preparedCommand);
+'''
+          new = '''        } else {
+            $needsSudo = ($sudo ?? false) && strtolower((string) ($this->data['username'] ?? '')) !== 'root';
+            $preparedCommand = $pathPrefix . $command;
+            if ($needsSudo) {
+                // Suppress sudo prompt text and run the whole payload under sudo.
+                // This keeps heredoc/multiline scripts from stealing sudo's stdin.
+                $passwordArg = escapeshellarg((string) $this->data['password'] . "\\n");
+                $payloadArg = escapeshellarg($preparedCommand);
+                $preparedCommand = "printf %s {$passwordArg} | sudo -S -p '' bash -lc {$payloadArg}";
+            }
+
+            $escapedCommand = escapeshellarg($preparedCommand);
+'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('sudo wrapping block not found')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - name: Validate PHP syntax
+        run: php -l inc/VpnServer.php
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add inc/VpnServer.php
+          git commit -m "Fix sudo execution for multiline SSH commands"
+          git push
