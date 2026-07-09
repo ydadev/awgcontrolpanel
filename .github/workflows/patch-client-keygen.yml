@@ -1,0 +1,144 @@
+name: patch-client-keygen
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-client-keygen.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch client key generation and native WireGuard peers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('inc/VpnClient.php')
+          text = path.read_text()
+          old_keygen = r'''    private static function generateClientKeys(array $serverData, string $clientName): array
+    {
+        $containerName = $serverData['container_name'];
+        $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
+        $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
+        $wgTool = $isAwg2 ? 'awg' : 'wg';
+
+        $cmd = sprintf(
+            "docker exec -i %s sh -lc 'set -e; umask 077; priv=\$(%s genkey | tr -d " . '"' . "\\r\\n" . '"' . "); [ -n \"\$priv\" ] || { echo empty_private_key; exit 1; }; pub=\$(printf " . '"' . "%%s\\n" . '"' . " \"\$priv\" | %s pubkey | tr -d " . '"' . "\\r\\n" . '"' . "); [ -n \"\$pub\" ] || { echo empty_public_key; exit 1; }; printf " . '"' . "%%s\\n---\\n%%s\\n" . '"' . " \"\$priv\" \"\$pub\"'",
+            escapeshellarg($containerName),
+            $wgTool,
+            $wgTool
+        );
+
+        $escaped = escapeshellarg($cmd);
+        $sshCmd = sprintf(
+            "sshpass -p %s ssh -p %d -q -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no %s@%s %s 2>&1",
+            escapeshellarg($serverData['password']),
+            $serverData['port'],
+            $serverData['username'],
+            $serverData['host'],
+            $escaped
+        );
+
+        $out = (string) shell_exec($sshCmd);
+        $parts = explode("---", trim($out));
+'''
+          new_keygen = r'''    private static function generateClientKeys(array $serverData, string $clientName): array
+    {
+        $containerName = (string) ($serverData['container_name'] ?? '');
+        $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
+        $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
+        $wgTool = $isAwg2 ? 'awg' : 'wg';
+
+        $keygenScript = sprintf(
+            'set -e; umask 077; priv=$(%s genkey | tr -d "\r\n"); [ -n "$priv" ] || { echo empty_private_key; exit 1; }; pub=$(printf "%%s\n" "$priv" | %s pubkey | tr -d "\r\n"); [ -n "$pub" ] || { echo empty_public_key; exit 1; }; printf "%%s\n---\n%%s\n" "$priv" "$pub"',
+            $wgTool,
+            $wgTool
+        );
+        if ($protocolSlug === 'wireguard-standard') {
+            $cmd = 'sh -lc ' . escapeshellarg($keygenScript);
+        } else {
+            $cmd = sprintf(
+                'docker exec -i %s sh -lc %s',
+                escapeshellarg($containerName),
+                escapeshellarg($keygenScript)
+            );
+        }
+
+        $server = new VpnServer((int) ($serverData['id'] ?? 0));
+        $out = (string) $server->executeCommand($cmd, true);
+        $parts = explode("---", trim($out));
+'''
+          if old_keygen not in text:
+              raise SystemExit('keygen target block not found')
+          text = text.replace(old_keygen, new_keygen, 1)
+
+          old_add = r'''    public static function addClientToServer(array $serverData, string $publicKey, string $clientIP): void
+    {
+        $containerName = $serverData['container_name'];
+        $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
+        $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
+        $configDir = '/opt/amnezia/awg';
+
+        // AWG2: try awg0.conf first (standard), fall back to wg0.conf (legacy panel installs)
+        $configFile = $isAwg2 ? 'awg0.conf' : 'wg0.conf';
+'''
+          new_add = r'''    public static function addClientToServer(array $serverData, string $publicKey, string $clientIP): void
+    {
+        $containerName = (string) ($serverData['container_name'] ?? '');
+        $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
+        $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
+        $configDir = '/opt/amnezia/awg';
+        $presharedKey = (string) ($serverData['preshared_key'] ?? '');
+
+        if ($protocolSlug === 'wireguard-standard') {
+            $publicKey = trim($publicKey);
+            if ($publicKey === '') {
+                throw new Exception('Refusing to add client with empty public key');
+            }
+            if ($presharedKey === '') {
+                throw new Exception('Refusing to add WireGuard client without preshared key');
+            }
+
+            $peerBlock = "\n[Peer]\n";
+            $peerBlock .= "PublicKey = {$publicKey}\n";
+            $peerBlock .= "PresharedKey = {$presharedKey}\n";
+            $peerBlock .= "AllowedIPs = {$clientIP}/32\n";
+
+            $script = "set -e\n";
+            $script .= "tmp=\$(mktemp)\n";
+            $script .= "printf '%s\n' " . escapeshellarg($presharedKey) . " > \"\$tmp\"\n";
+            $script .= "wg set wg0 peer " . escapeshellarg($publicKey) . " preshared-key \"\$tmp\" allowed-ips " . escapeshellarg($clientIP . '/32') . "\n";
+            $script .= "rm -f \"\$tmp\"\n";
+            $script .= "cat >> /etc/wireguard/wg0.conf <<'EOF'\n" . $peerBlock . "EOF\n";
+
+            $server = new VpnServer((int) ($serverData['id'] ?? 0));
+            $server->executeCommand('sh -lc ' . escapeshellarg($script), true);
+            return;
+        }
+
+        // AWG2: try awg0.conf first (standard), fall back to wg0.conf (legacy panel installs)
+        $configFile = $isAwg2 ? 'awg0.conf' : 'wg0.conf';
+'''
+          if old_add not in text:
+              raise SystemExit('addClient target block not found')
+          text = text.replace(old_add, new_add, 1)
+          text = text.replace("        $presharedKey = $serverData['preshared_key'];\n        $publicKey = trim($publicKey);", "        $publicKey = trim($publicKey);", 1)
+          path.write_text(text)
+          PY
+      - name: Lint PHP
+        run: php -l inc/VpnClient.php
+      - name: Commit and push
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add inc/VpnClient.php
+          git commit -m "Fix client key generation on test installs"
+          git push
