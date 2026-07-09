@@ -1703,6 +1703,9 @@ class InstallProtocolManager
                     'server_host' => $server->getData()['host'] ?? null,
                     'server_port' => $port,
                     'extras' => [
+                        'vpn_port' => $port,
+                        'server_public_key' => $res['server_public_key'] ?? null,
+                        'preshared_key' => $res['preshared_key'] ?? null,
                         'password' => $password,
                         'client_id' => $clientId,
                         'result' => $res,
@@ -1722,7 +1725,11 @@ class InstallProtocolManager
                 $currentSlug = $protocol['slug'] ?? '';
                 $isFirstProtocol = ($existingProtocol === '' || $existingProtocol === $currentSlug);
                 if ($isFirstProtocol) {
-                    self::markServerActive($serverId, null, ['vpn_port' => $port]);
+                    self::markServerActive($serverId, null, [
+                        'vpn_port' => $port,
+                        'server_public_key' => $res['server_public_key'] ?? null,
+                        'preshared_key' => $res['preshared_key'] ?? null,
+                    ]);
                 }
             }
 
