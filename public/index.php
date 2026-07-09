@@ -2713,7 +2713,7 @@ Router::post('/api/servers/{id}/protocols/install', function ($params) {
             return;
         }
 
-        $result = InstallProtocolManager::activate($server, $protocol, []);
+        $result = InstallProtocolManager::activate($server, $protocol, $installOptions);
 
         // Keep API behavior consistent with UI flow: once protocol activation succeeds,
         // clear transient error state and mark server as active for client creation.
