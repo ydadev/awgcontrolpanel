@@ -46,8 +46,8 @@ jobs:
             ! -name .github \
             -exec rm -rf {} +
 
+          rm -rf "$upstream_dir/.git"
           cp -a "$upstream_dir"/. "$workdir"/
-          rm -rf "$workdir/.git"
 
           git apply --check --whitespace=nowarn /tmp/current.patch
           git apply --whitespace=nowarn /tmp/current.patch
