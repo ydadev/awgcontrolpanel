@@ -1,0 +1,1253 @@
+{% extends "layout.twig" %}
+{% block title %}{{ server.name }}{% endblock %}
+
+{% block styles %}
+<style>
+.metric-mini {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+.metric-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.metric-icon {
+    width: 24px;
+    text-align: center;
+    font-size: 14px;
+}
+.metric-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    min-width: 60px;
+}
+.metric-chart {
+    height: 30px;
+    flex: 1;
+    min-width: 0;
+}
+.metric-value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #111827;
+    min-width: 70px;
+    text-align: right;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold">{{ server.name }}</h1>
+    <p class="text-gray-600">{{ server.host }}</p>
+  </div>
+  
+  {% if import_message %}
+  <div class="mb-6 {% if import_message.type == 'success' %}bg-green-50 border-green-400 text-green-700{% else %}bg-red-50 border-red-400 text-red-700{% endif %} border px-4 py-3 rounded">
+    <i class="fas {% if import_message.type == 'success' %}fa-check-circle{% else %}fa-exclamation-circle{% endif %} mr-2"></i>
+    {{ import_message.text }}
+  </div>
+  {% endif %}
+  
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white rounded shadow p-6">
+      <h3 class="font-bold mb-4">{{ t('servers.server_info') }}</h3>
+      <dl class="space-y-2">
+        <div><dt class="text-sm text-gray-600">{{ t('common.status') }}</dt><dd><span class="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">{{ server.status }}</span></dd></div>
+        {% if server_protocols|length <= 1 %}
+        <div><dt class="text-sm text-gray-600">VPN Port</dt><dd>{{ server.vpn_port }}</dd></div>
+        <div><dt class="text-sm text-gray-600">Subnet</dt><dd>{{ server.vpn_subnet }}</dd></div>
+        {% endif %}
+        
+      </dl>
+
+      <div class="mt-4 flex items-center gap-2">
+        <button type="button" id="uninstallAllBtn" class="px-3 py-1 bg-gray-600 text-white rounded text-sm">Удалить все протоколы</button>
+        <span id="uninstallMsg" class="ml-3 text-sm text-gray-600"></span>
+      </div>
+
+      <div class="mt-4">
+        <label class="block text-sm text-gray-600 mb-1">Добавить протокол</label>
+        <div class="flex items-center gap-2">
+          <select id="availableProtocolSelect" class="px-3 py-2 border rounded">
+            {% for p in available_protocols %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+          <button id="activateProtocolBtn" class="px-3 py-1 bg-green-600 text-white rounded text-sm">Установить</button>
+          <span id="activateMsg" class="ml-3 text-sm text-gray-600"></span>
+        </div>
+      </div>
+
+      <!-- Установка протоколов выполняется только через Настройки -->
+
+      <div class="mt-4">
+        <label class="block text-sm text-gray-600 mb-1">Установленные протоколы</label>
+        <div class="space-y-2">
+          {% for sp in server_protocols %}
+            <div class="border rounded px-3 py-2">
+              <div class="flex items-center justify-between">
+                <div class="text-sm font-medium">{{ sp.name }} <span class="text-gray-500">({{ sp.slug }})</span></div>
+                <button type="button" class="px-3 py-1 bg-red-600 text-white rounded text-sm btn-uninstall-sp" data-slug="{{ sp.slug }}">Удалить</button>
+              </div>
+              <div class="mt-1 text-xs text-gray-600">
+                {% if sp.server_host %}<span>Host: {{ sp.server_host }}</span>{% endif %}
+                {% if sp.server_port %}<span class="ml-2">Port: {{ sp.server_port }}</span>{% endif %}
+              </div>
+              {% if sp.slug == 'cf-warp' %}
+              {# ── WARP Status Widget ── #}
+              <div id="warpStatusWidget" class="mt-3 p-3 rounded-lg" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="#F59E0B"/>
+                    </svg>
+                    <span class="text-sm font-semibold text-white">Cloudflare WARP</span>
+                  </div>
+                  <div id="warpStatusBadge">
+                    <span class="px-2 py-0.5 rounded text-xs bg-gray-600 text-gray-300">
+                      <i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...
+                    </span>
+                  </div>
+                </div>
+
+                <div id="warpDetails" class="space-y-1 text-xs">
+                  <div class="flex items-center justify-between text-gray-400">
+                    <span>Прокси</span>
+                    <span id="warpProxy" class="font-mono text-gray-300">—</span>
+                  </div>
+                  <div class="flex items-center justify-between text-gray-400">
+                    <span>WARP IP</span>
+                    <span id="warpExitIp" class="font-mono text-gray-300">—</span>
+                  </div>
+                  <div class="flex items-center justify-between text-gray-400">
+                    <span>Режим</span>
+                    <span id="warpMode" class="text-gray-300">—</span>
+                  </div>
+                  <div class="flex items-center justify-between text-gray-400">
+                    <span>Сервис</span>
+                    <span id="warpSvc" class="text-gray-300">—</span>
+                  </div>
+                </div>
+
+                <div class="flex gap-2 mt-3">
+                  <button id="warpBtnConnect" onclick="warpAction('connect')" class="flex-1 px-2 py-1 rounded text-xs font-medium text-white" style="background:#22c55e;opacity:0.9" disabled>
+                    <i class="fas fa-play mr-1"></i>Connect
+                  </button>
+                  <button id="warpBtnDisconnect" onclick="warpAction('disconnect')" class="flex-1 px-2 py-1 rounded text-xs font-medium text-white" style="background:#ef4444;opacity:0.9" disabled>
+                    <i class="fas fa-stop mr-1"></i>Disconnect
+                  </button>
+                  <button id="warpBtnReconnect" onclick="warpAction('reconnect')" class="flex-1 px-2 py-1 rounded text-xs font-medium text-white" style="background:#3b82f6;opacity:0.9" disabled>
+                    <i class="fas fa-sync-alt mr-1"></i>Reconnect
+                  </button>
+                </div>
+
+                <p class="text-[10px] text-gray-500 mt-2 leading-tight">
+                  ⚠️ WARP ~50-100 МБ RAM • Цепочка: Клиент → WG → WARP → CF → Интернет
+                </p>
+              </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <div class="text-sm text-gray-500">Нет установленных протоколов</div>
+          {% endfor %}
+        </div>
+        <div id="uninstallSpMsg" class="mt-2 text-sm text-gray-600"></div>
+      </div>
+
+      {% if server.status == 'active' %}
+      <div class="metric-mini" id="serverMetrics">
+        <div class="metric-row">
+          <i class="fas fa-microchip metric-icon" style="color:#dc3545"></i>
+          <span class="metric-label">CPU</span>
+          <canvas id="cpuSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="cpuValue">--</div>
+        </div>
+        <div class="metric-row">
+          <i class="fas fa-memory metric-icon" style="color:#ffc107"></i>
+          <span class="metric-label">RAM</span>
+          <canvas id="ramSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="ramValue">--</div>
+        </div>
+        <div class="metric-row">
+          <i class="fas fa-hdd metric-icon" style="color:#17a2b8"></i>
+          <span class="metric-label">Disk</span>
+          <canvas id="diskSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="diskValue">--</div>
+        </div>
+        <div class="metric-row">
+          <i class="fas fa-network-wired metric-icon" style="color:#28a745"></i>
+          <span class="metric-label">Network</span>
+          <canvas id="networkSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="networkValue">--</div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="bg-white rounded shadow p-6">
+      <h3 class="font-bold mb-4">{{ t('clients.create') }}</h3>
+      <form method="POST" action="/servers/{{ server.id }}/clients/create" class="space-y-3" id="createClientForm">
+        <div>
+          <input name="name" placeholder="{{ t('clients.name') }}" required class="w-full px-3 py-2 border rounded" id="clientName">
+        </div>
+        <div>
+          <input name="login" placeholder="Логин (уникально на сервере, пусто — из имени)" class="w-full px-3 py-2 border rounded" id="clientLogin">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">{{ t('ai.protocol_type') }}</label>
+          <select name="protocol_id" class="w-full px-3 py-2 border rounded">
+            {% for sp in server_protocols %}
+              <option value="{{ sp.protocol_id }}">{{ sp.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">{{ t('clients.expiration') }}</label>
+          <select name="expires_in_days" class="w-full px-3 py-2 border rounded mb-2" id="expirationSelect" onchange="toggleExpirationInput()">
+            <option value="" selected>{{ t('clients.never_expires') }}</option>
+            <option value="7">7 {{ t('common.days') }}</option>
+            <option value="30">30 {{ t('common.days') }}</option>
+            <option value="60">60 {{ t('common.days') }}</option>
+            <option value="90">90 {{ t('common.days') }}</option>
+            <option value="180">180 {{ t('common.days') }}</option>
+            <option value="365">365 {{ t('common.days') }}</option>
+            <option value="custom">{{ t('clients.custom_seconds') }}</option>
+          </select>
+          <input type="number" name="expires_in_seconds" id="expirationSeconds" class="w-full px-3 py-2 border rounded" placeholder="{{ t('clients.enter_seconds') }}" style="display:none;" min="1">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">{{ t('clients.traffic_limit') }}</label>
+          <select name="traffic_limit_gb" class="w-full px-3 py-2 border rounded mb-2" id="trafficSelect" onchange="toggleTrafficInput()">
+            <option value="" selected>{{ t('clients.unlimited') }}</option>
+            <option value="1">1 GB</option>
+            <option value="5">5 GB</option>
+            <option value="10">10 GB</option>
+            <option value="25">25 GB</option>
+            <option value="50">50 GB</option>
+            <option value="100">100 GB</option>
+            <option value="250">250 GB</option>
+            <option value="500">500 GB</option>
+            <option value="1000">1000 GB (1 TB)</option>
+            <option value="custom">{{ t('clients.custom_mb') }}</option>
+          </select>
+          <input type="number" name="traffic_limit_mb" id="trafficMegabytes" class="w-full px-3 py-2 border rounded" placeholder="{{ t('clients.enter_megabytes') }}" style="display:none;" min="1">
+        </div>
+        <button type="submit" class="gradient-bg text-white px-4 py-2 rounded w-full" id="createClientBtn">
+          <span id="createClientText">{{ t('form.create') }}</span>
+          <i class="fas fa-spinner fa-spin" id="createClientSpinner" style="display:none;"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="bg-white rounded shadow p-6 mb-8">
+    <h3 class="font-bold mb-4 flex items-center gap-2">
+      <i class="fas fa-file-import text-purple-500"></i>
+      {{ t('servers.config_import_title') }}
+    </h3>
+    <p class="text-sm text-gray-600 mb-4">{{ t('servers.config_import_hint') }}</p>
+    <form method="POST" action="/servers/{{ server.id }}/config/import" enctype="multipart/form-data" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('servers.config_import_type_label') }}</label>
+        <select name="import_type" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+          <option value="panel_backup">{{ t('servers.config_import_type_panel') }}</option>
+          <option value="amnezia_app">{{ t('servers.config_import_type_amnezia') }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('servers.config_import_file_label') }}</label>
+        <input type="file" name="config_file" accept=".json,.backup" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+        <p class="text-xs text-gray-500 mt-1">{{ t('servers.config_import_file_hint') }}</p>
+      </div>
+      <button type="submit" class="gradient-bg text-white px-4 py-2 rounded">
+        <i class="fas fa-upload mr-2"></i>{{ t('servers.config_import_submit') }}
+      </button>
+    </form>
+  </div>
+  
+  <!-- Backup Section -->
+  <div class="bg-white rounded shadow mb-8">
+    <div class="px-6 py-4 border-b flex justify-between items-center">
+      <h3 class="font-bold">{{ t('backups.title') }}</h3>
+      <button onclick="createBackup({{ server.id }})" class="gradient-bg text-white px-4 py-2 rounded text-sm">
+        <i class="fas fa-save"></i> {{ t('backups.create') }}
+      </button>
+    </div>
+    <div id="backupsList" class="p-4">
+      <div class="text-center text-gray-500 py-4">
+        <i class="fas fa-spinner fa-spin"></i> {{ t('form.loading') }}
+      </div>
+    </div>
+  </div>
+  <div class="bg-white rounded shadow">
+    <div class="px-6 py-4 border-b flex justify-between items-center">
+      <h3 class="font-bold">{{ t('clients.title') }} ({{ clients|length }})</h3>
+      <div class="flex items-center gap-3">
+        <form method="GET" action="/servers/{{ server.id }}" class="flex items-center gap-2">
+          <label class="text-sm text-gray-600">{{ t('ai.protocol_type') }}</label>
+          <select name="protocol_id" class="px-3 py-2 border rounded" onchange="this.form.submit()">
+            <option value="">Все</option>
+            {% for sp in server_protocols %}
+              <option value="{{ sp.protocol_id }}" {% if selected_protocol_id == sp.protocol_id %}selected{% endif %}>{{ sp.name }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        <button onclick="syncAllStats({{ server.id }})" class="text-purple-600 hover:text-purple-800 text-sm">
+          <i class="fas fa-sync-alt"></i> {{ t('clients.sync_stats') }}
+        </button>
+      </div>
+    </div>
+    {% if clients|length > 0 %}
+    <div class="w-full overflow-x-auto">
+    <table class="w-full" style="min-width: 1120px;">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.name') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Логин</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('ai.protocol_type') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.ip') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.status') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.expiration') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.traffic') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.traffic_limit') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('common.speed') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.last_handshake') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.actions') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for client in clients %}
+        <tr class="border-t">
+          <td class="px-6 py-4">{{ client.name }}</td>
+          <td class="px-6 py-4">{{ client.name }}</td>
+          <td class="px-6 py-4">
+            {% if client.protocol_name %}
+              <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">{{ client.protocol_name }}</span>
+            {% else %}
+              <span class="text-gray-400">-</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4">{{ client.client_ip }}</td>
+          <td class="px-6 py-4" data-client-name="{{ client.name }}" data-client-status="{{ client.status }}" data-last-handshake="{{ client.last_handshake }}">
+            {% set is_online_by_handshake = client.last_handshake and (("now"|date('U') - client.last_handshake|date('U')) < 300) %}
+            {% if client.name in online_logins or is_online_by_handshake %}
+              <span class="online-badge px-2 py-1 bg-green-100 text-green-800 rounded text-xs"><i class="fas fa-wifi mr-1"></i>Online</span>
+            {% elseif client.status == 'active' %}
+              <span class="status-badge px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">{{ t('status.active') }}</span>
+            {% else %}
+              <span class="status-badge px-2 py-1 bg-red-100 text-red-800 rounded text-xs">{{ t('status.disabled') }}</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm">
+            {% if client.expires_at %}
+              {% set expires_ts = client.expires_at|date('U') %}
+              {% set now_ts = "now"|date('U') %}
+              {% set diff_days = ((expires_ts - now_ts) / 86400)|round %}
+              
+              {% if diff_days < 0 %}
+                <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
+                  <i class="fas fa-exclamation-circle"></i> {{ t('clients.expired') }}
+                </span>
+              {% elseif diff_days <= 7 %}
+                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
+                  <i class="fas fa-clock"></i> {{ diff_days }} {{ t('common.days') }}
+                </span>
+              {% else %}
+                <span class="text-gray-600">{{ client.expires_at|date('Y-m-d') }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-green-500 text-xl" title="{{ t('clients.never_expires') }}">&infin;</span>
+            {% endif %}
+          </td>
+          <td class="px-2 py-2 text-xs">
+            <div class="text-gray-600 font-mono">
+              ↑{{ (client.bytes_sent|default(0) / 1024 / 1024)|number_format(2) }} MB
+            </div>
+            <div class="text-gray-600 font-mono">
+              ↓{{ (client.bytes_received|default(0) / 1024 / 1024)|number_format(2) }} MB
+            </div>
+          </td>
+          <td class="px-2 py-2 text-xs text-center">
+            {% if client.traffic_limit %}
+              {% set total_traffic = (client.bytes_sent|default(0) + client.bytes_received|default(0)) %}
+              {% set limit_gb = (client.traffic_limit / 1073741824)|number_format(2) %}
+              {% set used_gb = (total_traffic / 1073741824)|number_format(2) %}
+              {% set percentage = ((total_traffic / client.traffic_limit) * 100)|round %}
+              
+              {% if percentage >= 100 %}
+                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">
+                  <i class="fas fa-exclamation-circle"></i> {{ t('clients.overlimit') }}
+                </span>
+              {% elseif percentage >= 80 %}
+                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">
+                  {{ used_gb }} / {{ limit_gb }} GB ({{ percentage }}%)
+                </span>
+              {% else %}
+                <span class="text-gray-600">{{ used_gb }} / {{ limit_gb }} GB</span>
+              {% endif %}
+            {% else %}
+              <span class="text-green-500 text-lg" title="{{ t('clients.unlimited') }}">&infin;</span>
+            {% endif %}
+          </td>
+          <td class="px-2 py-2 text-xs">
+            <div class="flex flex-col items-center" style="width: 120px; max-width: 120px;">
+              <div style="height: 30px; width: 100%;">
+                <canvas id="clientSparkline-{{ client.id }}"></canvas>
+              </div>
+              <div id="client-speed-{{ client.id }}" class="text-gray-600 text-[10px] mt-1 font-mono text-center leading-tight">
+                <div class="text-green-600 whitespace-nowrap">↑{{ ((client.speed_up|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+                <div class="text-blue-600 whitespace-nowrap">↓{{ ((client.speed_down|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+              </div>
+            </div>
+          </td>
+          <td class="px-2 py-2 text-xs whitespace-nowrap text-right">
+            {% if client.last_handshake %}
+              <span class="text-gray-600 block">{{ client.last_handshake|split(' ')|first }}</span>
+              <span class="text-gray-400 block">{{ client.last_handshake|split(' ')|last }}</span>
+            {% else %}
+              <span class="text-gray-400">{{ t('clients.never') }}</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4">
+            <a href="/clients/{{ client.id }}" class="text-purple-600 hover:text-purple-800 mr-2">{{ t('servers.view') }}</a>
+            {% if client.status == 'active' %}
+              <form method="POST" action="/clients/{{ client.id }}/revoke" style="display:inline;">
+                <button type="button" class="text-orange-600 hover:text-orange-800 mr-2" onclick="confirmAction(this, '{{ t('clients.revoke_confirm') }}')">{{ t('clients.revoke') }}</button>
+              </form>
+            {% else %}
+              <form method="POST" action="/clients/{{ client.id }}/restore" style="display:inline;">
+                <button type="submit" class="text-green-600 hover:text-green-800 mr-2">{{ t('clients.restore') }}</button>
+              </form>
+            {% endif %}
+            <form method="POST" action="/clients/{{ client.id }}/delete" style="display:inline;">
+              <button type="button" class="text-red-600 hover:text-red-800" onclick="confirmAction(this, '{{ t('clients.delete_confirm') }}')">{{ t('clients.delete') }}</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="p-12 text-center text-gray-500">{{ t('clients.no_clients') }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+async function confirmAction(btn, message) {
+  if (await showConfirmModal(message)) {
+    btn.closest('form').submit();
+  }
+}
+
+function toggleExpirationInput() {
+  const select = document.getElementById('expirationSelect');
+  const input = document.getElementById('expirationSeconds');
+  if (select.value === 'custom') {
+    input.style.display = 'block';
+    input.required = true;
+    input.focus();
+  } else {
+    input.style.display = 'none';
+    input.required = false;
+    input.value = '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const uninstallAllBtn = document.getElementById('uninstallAllBtn');
+  const msg = document.getElementById('uninstallMsg');
+
+  if (uninstallAllBtn) {
+    uninstallAllBtn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm('Удалить все Amnezia-контейнеры на сервере?')) return;
+
+      const origHTML = uninstallAllBtn.innerHTML;
+      uninstallAllBtn.disabled = true;
+      uninstallAllBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i>Удаление...';
+      uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-gray-600', 'bg-yellow-600');
+      uninstallAllBtn.style.cursor = 'wait';
+      msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;margin-top:4px;">' +
+        '<i class="fas fa-circle-notch fa-spin text-yellow-600"></i>' +
+        '<span style="color:#92400e;font-weight:500;">Удаление всех протоколов... Это может занять минуту</span></div>';
+
+      try {
+        const res = await fetch(`/servers/{{ server.id }}/protocols/uninstall-all`, { method: 'POST', credentials: 'same-origin' });
+        const data = await res.json();
+        if (data.success) {
+          uninstallAllBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Удалено';
+          uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-yellow-600', 'bg-green-600');
+          msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#d1fae5;border:1px solid #10b981;border-radius:6px;margin-top:4px;">' +
+            '<i class="fas fa-check-circle text-green-600"></i>' +
+            '<span style="color:#065f46;font-weight:500;">' + (data.message || 'Все протоколы удалены') + '</span></div>';
+          setTimeout(() => location.reload(), 1200);
+        } else {
+          uninstallAllBtn.innerHTML = origHTML;
+          uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-yellow-600', 'bg-gray-600');
+          msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fee2e2;border:1px solid #ef4444;border-radius:6px;margin-top:4px;">' +
+            '<i class="fas fa-exclamation-circle text-red-600"></i>' +
+            '<span style="color:#991b1b;">' + (data.error || 'Ошибка') + '</span></div>';
+        }
+      } catch (e) {
+        uninstallAllBtn.innerHTML = origHTML;
+        uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-yellow-600', 'bg-gray-600');
+        msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fee2e2;border:1px solid #ef4444;border-radius:6px;margin-top:4px;">' +
+          '<i class="fas fa-exclamation-circle text-red-600"></i>' +
+          '<span style="color:#991b1b;">' + (e.message || 'Ошибка связи') + '</span></div>';
+      }
+      uninstallAllBtn.disabled = false;
+    });
+  }
+
+  const activateBtn = document.getElementById('activateProtocolBtn');
+  if (activateBtn) {
+    activateBtn.addEventListener('click', async function() {
+      const select = document.getElementById('availableProtocolSelect');
+      const msg2 = document.getElementById('activateMsg');
+      msg2.textContent = '';
+      const pid = select ? select.value : '';
+      if (!pid) { msg2.textContent = 'Нет доступных протоколов'; return; }
+      activateBtn.disabled = true;
+      msg2.innerHTML = '<i class="fas fa-circle-notch fa-spin text-blue-600 mr-2"></i><span class="text-gray-700">Установка протокола...</span>';
+      try {
+        const res = await fetch('/servers/{{ server.id }}/protocols/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'protocol_id=' + encodeURIComponent(pid)
+        });
+        let data;
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) { data = await res.json(); } else { data = { error: await res.text() }; }
+        if (res.ok && data && data.success !== false && !data.error) {
+          msg2.textContent = 'Готово';
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          msg2.textContent = (data && data.error) ? data.error : ('Ошибка установки (' + res.status + ')');
+        }
+      } catch (e) {
+        msg2.textContent = e.message || 'Ошибка связи';
+      }
+      activateBtn.disabled = false;
+    });
+  }
+
+  document.querySelectorAll('.btn-uninstall-sp').forEach(btn => {
+    btn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const confirmed = await showConfirmModal('Удалить протокол и всех его клиентов?', 'Удаление протокола');
+      if (!confirmed) return;
+      const slug = btn.getAttribute('data-slug');
+      const m = document.getElementById('uninstallSpMsg');
+      const card = btn.closest('.border.rounded');
+
+      // Save original button state
+      const origHTML = btn.innerHTML;
+      const origClasses = btn.className;
+
+      // Disable ALL uninstall buttons
+      document.querySelectorAll('.btn-uninstall-sp').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+
+      // Animate the clicked button
+      btn.style.opacity = '1';
+      btn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i>Удаление...';
+      btn.className = btn.className.replace('bg-red-600', 'bg-yellow-600');
+      btn.style.cursor = 'wait';
+      btn.style.minWidth = btn.offsetWidth + 'px';
+
+      // Add overlay to protocol card
+      if (card) {
+        card.style.position = 'relative';
+        const overlay = document.createElement('div');
+        overlay.id = 'uninstall-overlay-' + slug;
+        overlay.style.cssText = 'position:absolute;inset:0;background:rgba(239,68,68,0.05);border-radius:inherit;pointer-events:none;z-index:5;';
+        card.appendChild(overlay);
+        card.style.transition = 'opacity 0.3s';
+        card.style.opacity = '0.7';
+      }
+
+      // Show progress message
+      m.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;margin-top:8px;">' +
+        '<i class="fas fa-circle-notch fa-spin text-yellow-600"></i>' +
+        '<span style="color:#92400e;font-weight:500;">Удаление <b>' + slug + '</b>... Это может занять до 30 секунд</span></div>';
+
+      try {
+        const resp = await fetch('/servers/{{ server.id }}/protocols/' + encodeURIComponent(slug) + '/uninstall', { method: 'POST', credentials: 'same-origin' });
+        let data;
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('application/json')) { data = await resp.json(); } else { data = { error: await resp.text() }; }
+        if (resp.ok && data && !data.error) {
+          // Success state
+          btn.innerHTML = '<i class="fas fa-check mr-1"></i>Удалено';
+          btn.className = btn.className.replace('bg-yellow-600', 'bg-green-600');
+          if (card) { card.style.opacity = '0.4'; }
+          m.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#d1fae5;border:1px solid #10b981;border-radius:6px;margin-top:8px;">' +
+            '<i class="fas fa-check-circle text-green-600"></i>' +
+            '<span style="color:#065f46;font-weight:500;">Протокол удалён. Клиенты: ' + (data.clients_removed || 0) + '</span></div>';
+          setTimeout(() => location.reload(), 1200);
+        } else {
+          // Error state
+          btn.innerHTML = '<i class="fas fa-times mr-1"></i>Ошибка';
+          btn.className = origClasses;
+          if (card) { card.style.opacity = '1'; const ov = document.getElementById('uninstall-overlay-' + slug); if (ov) ov.remove(); }
+          m.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fee2e2;border:1px solid #ef4444;border-radius:6px;margin-top:8px;">' +
+            '<i class="fas fa-exclamation-circle text-red-600"></i>' +
+            '<span style="color:#991b1b;">' + ((data && data.error) ? data.error : ('Ошибка (' + resp.status + ')')) + '</span></div>';
+          setTimeout(() => { btn.innerHTML = origHTML; document.querySelectorAll('.btn-uninstall-sp').forEach(b => { b.disabled = false; b.style.opacity = '1'; }); }, 3000);
+        }
+      } catch (err) {
+        btn.innerHTML = '<i class="fas fa-times mr-1"></i>Ошибка';
+        btn.className = origClasses;
+        if (card) { card.style.opacity = '1'; const ov = document.getElementById('uninstall-overlay-' + slug); if (ov) ov.remove(); }
+        m.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fee2e2;border:1px solid #ef4444;border-radius:6px;margin-top:8px;">' +
+          '<i class="fas fa-exclamation-circle text-red-600"></i>' +
+          '<span style="color:#991b1b;">' + (err.message || 'Ошибка связи') + '</span></div>';
+        setTimeout(() => { btn.innerHTML = origHTML; document.querySelectorAll('.btn-uninstall-sp').forEach(b => { b.disabled = false; b.style.opacity = '1'; }); }, 3000);
+      }
+    });
+  });
+
+
+});
+
+function toggleTrafficInput() {
+  const select = document.getElementById('trafficSelect');
+  const input = document.getElementById('trafficMegabytes');
+  if (select.value === 'custom') {
+    input.style.display = 'block';
+    input.required = true;
+    input.focus();
+  } else {
+    input.style.display = 'none';
+    input.required = false;
+    input.value = '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const form = document.getElementById('createClientForm');
+  const clientNameInput = document.getElementById('clientName');
+  
+  const clientLoginInput = document.getElementById('clientLogin');
+  if (clientLoginInput) {
+    clientLoginInput.addEventListener('input', function(e) {
+      let value = e.target.value;
+      let sanitized = value.replace(/\s+/g, '_');
+      if (value !== sanitized) {
+        e.target.value = sanitized;
+      }
+    });
+  }
+  
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      const btn = document.getElementById('createClientBtn');
+      const text = document.getElementById('createClientText');
+      const spinner = document.getElementById('createClientSpinner');
+      
+      // Show spinner and disable button
+      btn.disabled = true;
+      text.style.display = 'none';
+      spinner.style.display = 'inline-block';
+      
+      // Form will submit normally
+    });
+  }
+});
+
+async function syncAllStats(serverId) {
+  try {
+    const response = await fetch(`/servers/${serverId}/sync-stats`, {
+      method: 'POST'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('Failed to sync stats: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
+}
+
+// ── WARP Status Widget ──
+function updateWarpWidget(data) {
+  const badge = document.getElementById('warpStatusBadge');
+  const proxy = document.getElementById('warpProxy');
+  const exitIp = document.getElementById('warpExitIp');
+  const mode = document.getElementById('warpMode');
+  const svc = document.getElementById('warpSvc');
+  const btnConnect = document.getElementById('warpBtnConnect');
+  const btnDisconnect = document.getElementById('warpBtnDisconnect');
+  const btnReconnect = document.getElementById('warpBtnReconnect');
+
+  if (!badge) return;
+
+  if (!data.installed) {
+    badge.innerHTML = '<span class="px-2 py-0.5 rounded text-xs bg-gray-600 text-gray-300">Не установлен</span>';
+    return;
+  }
+
+  if (data.connected) {
+    badge.innerHTML = '<span class="px-2 py-0.5 rounded text-xs text-white" style="background:#22c55e"><i class="fas fa-check-circle mr-1"></i>Connected</span>';
+  } else {
+    badge.innerHTML = '<span class="px-2 py-0.5 rounded text-xs text-white" style="background:#ef4444"><i class="fas fa-times-circle mr-1"></i>Disconnected</span>';
+  }
+
+  if (proxy) proxy.textContent = data.proxy_listening ? ('socks5h://127.0.0.1:' + (data.proxy_port || 40000)) : '—';
+  if (exitIp) exitIp.textContent = data.warp_ip || '—';
+  if (mode) mode.textContent = data.mode || '—';
+  if (svc) svc.textContent = data.service_status || '—';
+
+  if (btnConnect) { btnConnect.disabled = false; }
+  if (btnDisconnect) { btnDisconnect.disabled = false; }
+  if (btnReconnect) { btnReconnect.disabled = false; }
+}
+
+async function loadWarpStatus() {
+  const widget = document.getElementById('warpStatusWidget');
+  if (!widget) return;
+  try {
+    const res = await fetch('/servers/{{ server.id }}/warp/status', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (data.success !== false) {
+      updateWarpWidget(data);
+    }
+  } catch (e) {
+    console.error('WARP status error:', e);
+  }
+}
+
+async function warpAction(action) {
+  const btnConnect = document.getElementById('warpBtnConnect');
+  const btnDisconnect = document.getElementById('warpBtnDisconnect');
+  const btnReconnect = document.getElementById('warpBtnReconnect');
+  if (btnConnect) btnConnect.disabled = true;
+  if (btnDisconnect) btnDisconnect.disabled = true;
+  if (btnReconnect) btnReconnect.disabled = true;
+
+  const badge = document.getElementById('warpStatusBadge');
+  if (badge) badge.innerHTML = '<span class="px-2 py-0.5 rounded text-xs bg-gray-600 text-gray-300"><i class="fas fa-spinner fa-spin mr-1"></i>' + action + '...</span>';
+
+  try {
+    const res = await fetch('/servers/{{ server.id }}/warp/action', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action })
+    });
+    const data = await res.json();
+    if (data.success !== false) {
+      updateWarpWidget(data);
+    } else {
+      if (badge) badge.innerHTML = '<span class="px-2 py-0.5 rounded text-xs bg-red-600 text-white">' + (data.error || 'Ошибка') + '</span>';
+    }
+  } catch (e) {
+    if (badge) badge.innerHTML = '<span class="px-2 py-0.5 rounded text-xs bg-red-600 text-white">' + e.message + '</span>';
+  }
+  if (btnConnect) btnConnect.disabled = false;
+  if (btnDisconnect) btnDisconnect.disabled = false;
+  if (btnReconnect) btnReconnect.disabled = false;
+}
+
+// WARP auto-refresh
+document.addEventListener('DOMContentLoaded', function() {
+  loadWarpStatus();
+  setInterval(loadWarpStatus, 30000);
+});
+
+// Load backups on page load
+document.addEventListener('DOMContentLoaded', function() {
+  loadBackups({{ server.id }});
+});
+
+async function loadBackups(serverId) {
+  try {
+    const response = await fetch(`/api/servers/${serverId}/backups`, {
+      credentials: 'same-origin'
+    });
+    
+    if (response.status === 401) {
+      document.getElementById('backupsList').innerHTML = '<div class="text-center text-red-500 py-4">{{ t("message.error") }}: {{ t("backups.login_required") }}</div>';
+      return;
+    }
+    
+    const data = await response.json();
+    
+    if (data.success && data.backups.length > 0) {
+      let html = '<div class="space-y-2">';
+      data.backups.forEach(backup => {
+        const size = (backup.backup_size / 1024 / 1024).toFixed(2);
+        const statusClass = backup.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+        
+        html += `
+          <div class="flex items-center justify-between p-3 border rounded">
+            <div class="flex-1">
+              <div class="font-medium">${backup.backup_name}</div>
+              <div class="text-sm text-gray-600">
+                ${backup.clients_count} {{ t('clients.title') }} • ${size} MB • ${backup.created_at}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <span class="px-2 py-1 ${statusClass} rounded text-xs">${backup.status}</span>
+              ${backup.status === 'completed' ? `
+                <button onclick="restoreBackup(${serverId}, ${backup.id})" class="text-blue-600 hover:text-blue-800 px-3 py-1 border rounded text-sm">
+                  <i class="fas fa-undo"></i> {{ t('backups.restore') }}
+                </button>
+              ` : ''}
+              <button onclick="deleteBackup(${backup.id})" class="text-red-600 hover:text-red-800 px-3 py-1 border rounded text-sm">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      document.getElementById('backupsList').innerHTML = html;
+    } else {
+      document.getElementById('backupsList').innerHTML = '<div class="text-center text-gray-500 py-4">{{ t("backups.no_backups") }}</div>';
+    }
+  } catch (error) {
+    document.getElementById('backupsList').innerHTML = `<div class="text-center text-red-500 py-4">Error: ${error.message}</div>`;
+  }
+}
+
+async function createBackup(serverId) {
+  if (!confirm('{{ t("backups.create_confirm") }}')) return;
+  
+  // Show loading state
+  document.getElementById('backupsList').innerHTML = '<div class="text-center text-gray-500 py-4"><i class="fas fa-spinner fa-spin"></i> {{ t("form.processing") }}</div>';
+  
+  try {
+    const response = await fetch(`/api/servers/${serverId}/backup`, {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      alert('{{ t("backups.created_success") }}');
+      loadBackups(serverId);
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+      loadBackups(serverId);
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+    loadBackups(serverId);
+  }
+}
+
+async function restoreBackup(serverId, backupId) {
+  if (!confirm('{{ t("backups.restore_confirm") }}')) return;
+  
+  try {
+    const response = await fetch(`/api/servers/${serverId}/restore`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ backup_id: backupId })
+    });
+    
+    const data = await response.json();
+    console.log('Restore response:', data);
+    
+    if (data.success !== false) {
+      let message = `{{ t("backups.restored_success") }}: ${data.restored} {{ t("clients.title") }}`;
+      
+      if (data.failed > 0) {
+        message += `\n\nПропущено: ${data.failed}`;
+        if (data.errors && data.errors.length > 0) {
+          message += '\n\nПричины:\n' + data.errors.slice(0, 5).join('\n');
+          if (data.errors.length > 5) {
+            message += `\n... и ещё ${data.errors.length - 5}`;
+          }
+        }
+      }
+      
+      alert(message);
+      if (data.restored > 0) {
+        location.reload();
+      } else {
+        loadBackups(serverId);
+      }
+    } else {
+      let errorMsg = 'Error: ';
+      if (data.error) {
+        errorMsg += data.error;
+      } else if (data.errors && data.errors.length > 0) {
+        errorMsg += data.errors.join(', ');
+      } else {
+        errorMsg += 'Unknown error';
+      }
+      alert(errorMsg);
+    }
+  } catch (error) {
+    console.error('Restore error:', error);
+    alert('Error: ' + error.message);
+  }
+}
+
+async function deleteBackup(backupId) {
+  if (!confirm('{{ t("backups.delete_confirm") }}')) return;
+  
+  try {
+    const response = await fetch(`/api/backups/${backupId}`, {
+      method: 'DELETE',
+      credentials: 'same-origin'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      alert('{{ t("backups.deleted_success") }}');
+      loadBackups({{ server.id }});
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
+}
+
+// Server metrics sparklines
+{% if server.status == 'active' %}
+const serverId = {{ server.id }};
+let sparklineCharts = {};
+
+function initSparklines() {
+  const chartConfig = {
+    type: 'line',
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false }
+      },
+      scales: {
+        x: { display: false },
+        y: { display: false, beginAtZero: true }
+      },
+      elements: {
+        line: { borderWidth: 2, tension: 0.4 },
+        point: { radius: 0 }
+      }
+    }
+  };
+  
+  sparklineCharts.cpu = new Chart(document.getElementById('cpuSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#dc3545',
+        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+        fill: true
+      }]
+    },
+    options: {
+      ...chartConfig.options,
+      scales: {
+        ...chartConfig.options.scales,
+        y: { display: false, beginAtZero: true, max: 100 }
+      }
+    }
+  });
+  
+  sparklineCharts.ram = new Chart(document.getElementById('ramSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#ffc107',
+        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+        fill: true
+      }]
+    }
+  });
+  
+  sparklineCharts.disk = new Chart(document.getElementById('diskSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#17a2b8',
+        backgroundColor: 'rgba(23, 162, 184, 0.1)',
+        fill: true
+      }]
+    }
+  });
+  
+  sparklineCharts.network = new Chart(document.getElementById('networkSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#28a745',
+        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+        fill: true
+      }]
+    }
+  });
+}
+
+async function updateServerMetrics() {
+  try {
+    const response = await fetch(`/api/servers/${serverId}/metrics?hours=1`, {
+      credentials: 'same-origin'
+    });
+    
+    const data = await response.json();
+    
+    console.log('Metrics response:', data);
+    
+    if (data.success && data.metrics.length > 0) {
+      const metrics = data.metrics.slice(-20); // Last 20 points
+      const latest = metrics[metrics.length - 1];
+      
+      // Update values with more details
+      const cpuVal = parseFloat(latest.cpu_percent).toFixed(1);
+      document.getElementById('cpuValue').textContent = `${cpuVal}%`;
+      
+      const ramUsed = Math.round(latest.ram_used_mb / 1024 * 10) / 10;
+      const ramTotal = Math.round(latest.ram_total_mb / 1024 * 10) / 10;
+      const ramPercent = (latest.ram_used_mb / latest.ram_total_mb * 100).toFixed(0);
+      document.getElementById('ramValue').textContent = `${ramPercent}% (${ramUsed}G)`;
+      
+      const diskUsed = parseFloat(latest.disk_used_gb).toFixed(0);
+      const diskTotal = parseFloat(latest.disk_total_gb).toFixed(0);
+      const diskPercent = (latest.disk_used_gb / latest.disk_total_gb * 100).toFixed(0);
+      document.getElementById('diskValue').textContent = `${diskPercent}% (${diskUsed}G)`;
+      
+      const netRx = parseFloat(latest.network_rx_mbps).toFixed(1);
+      const netTx = parseFloat(latest.network_tx_mbps).toFixed(1);
+      document.getElementById('networkValue').textContent = `↓${netRx} ↑${netTx}`;
+      
+      // Update sparklines
+      const labels = metrics.map((_, i) => i);
+      
+      sparklineCharts.cpu.data.labels = labels;
+      sparklineCharts.cpu.data.datasets[0].data = metrics.map(m => parseFloat(m.cpu_percent));
+      sparklineCharts.cpu.update('none');
+      
+      sparklineCharts.ram.data.labels = labels;
+      sparklineCharts.ram.data.datasets[0].data = metrics.map(m => (m.ram_used_mb / m.ram_total_mb * 100));
+      sparklineCharts.ram.update('none');
+      
+      sparklineCharts.disk.data.labels = labels;
+      sparklineCharts.disk.data.datasets[0].data = metrics.map(m => (m.disk_used_gb / m.disk_total_gb * 100));
+      sparklineCharts.disk.update('none');
+      
+      sparklineCharts.network.data.labels = labels;
+      sparklineCharts.network.data.datasets[0].data = metrics.map(m => parseFloat(m.network_rx_mbps) + parseFloat(m.network_tx_mbps));
+      sparklineCharts.network.update('none');
+    }
+  } catch (error) {
+    console.error('Failed to fetch metrics:', error);
+    // Show error in UI
+    document.getElementById('cpuValue').textContent = 'Error';
+    document.getElementById('ramValue').textContent = 'Error';
+    document.getElementById('diskValue').textContent = 'Error';
+    document.getElementById('networkValue').textContent = 'Error';
+  }
+}
+
+// Initialize sparklines if active
+if (document.getElementById('cpuSparkline')) {
+  initSparklines();
+  updateServerMetrics();
+  setInterval(updateServerMetrics, 30000); // Update every 30 seconds
+}
+
+// Update client speeds
+let clientCharts = {};
+
+function prepareSparklineSeries(values) {
+  const cleaned = values.map(v => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  });
+
+  const nonZero = cleaned.filter(v => v > 0).sort((a, b) => a - b);
+  let capped = cleaned;
+
+  // Suppress single extreme spikes that make the mini-chart unreadable.
+  if (nonZero.length >= 5) {
+    const p95Index = Math.floor((nonZero.length - 1) * 0.95);
+    const p95 = nonZero[p95Index] || 0;
+    const cap = p95 > 0 ? p95 * 2 : 0;
+    if (cap > 0) {
+      capped = cleaned.map(v => Math.min(v, cap));
+    }
+  }
+
+  // Small moving average to reduce jitter on tiny sparklines.
+  return capped.map((_, i, arr) => {
+    const from = Math.max(0, i - 1);
+    const to = Math.min(arr.length - 1, i + 1);
+    let sum = 0;
+    let count = 0;
+    for (let j = from; j <= to; j++) {
+      sum += arr[j];
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  });
+}
+
+async function updateClientSpeeds() {
+  const clientRows = document.querySelectorAll('[id^="client-speed-"]');
+  
+  for (const row of clientRows) {
+    const clientId = row.id.replace('client-speed-', '');
+    const canvasId = `clientSparkline-${clientId}`;
+    const canvas = document.getElementById(canvasId);
+    
+    try {
+      const response = await fetch(`/api/clients/${clientId}/metrics?hours=24`, { // Fetch 24h for sparkline
+        credentials: 'same-origin'
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.metrics) {
+        const metrics = data.metrics; // Use all points for chart
+        
+        // 1. Render/Update Chart
+        if (canvas) {
+           const labels = metrics.map((_, i) => i);
+            const rawUp = metrics.map(m => (parseFloat(m.speed_up_kbps) / 1000)); // Mbps
+            const rawDown = metrics.map(m => (parseFloat(m.speed_down_kbps) / 1000)); // Mbps
+            const dataUp = prepareSparklineSeries(rawUp);
+            const dataDown = prepareSparklineSeries(rawDown);
+           
+           if (clientCharts[clientId]) {
+               // Update existing chart
+               clientCharts[clientId].data.labels = labels;
+               clientCharts[clientId].data.datasets[0].data = dataUp;
+               clientCharts[clientId].data.datasets[1].data = dataDown;
+               clientCharts[clientId].update('none');
+           } else {
+               // Create new chart
+               clientCharts[clientId] = new Chart(canvas, {
+                   type: 'line',
+                   data: {
+                       labels: labels,
+                       datasets: [
+                           {
+                               label: 'Up',
+                               data: dataUp,
+                               borderColor: '#16a34a', // green-600
+                               borderWidth: 1.5,
+                               pointRadius: 0,
+                               fill: false,
+                               tension: 0.4
+                           },
+                           {
+                               label: 'Down',
+                               data: dataDown,
+                               borderColor: '#2563eb', // blue-600
+                               borderWidth: 1.5,
+                               pointRadius: 0,
+                               fill: false,
+                               tension: 0.4
+                           }
+                       ]
+                   },
+                   options: {
+                       responsive: true,
+                       maintainAspectRatio: false,
+                       plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                       scales: {
+                           x: { display: false },
+                           y: { display: false, beginAtZero: true }
+                       },
+                       animation: false
+                   }
+               });
+           }
+        }
+
+        // 2. Update Text Badge (Last Known Speed)
+        if (metrics.length > 0) {
+            const latest = metrics[metrics.length - 1];
+            const speedUp = (parseFloat(latest.speed_up_kbps) / 1000).toFixed(2);
+            const speedDown = (parseFloat(latest.speed_down_kbps) / 1000).toFixed(2);
+            
+            row.innerHTML = `
+                <div class="text-green-600 whitespace-nowrap">↑${speedUp} Mbit</div>
+                <div class="text-blue-600 whitespace-nowrap">↓${speedDown} Mbit</div>
+            `;
+        } else {
+            row.innerHTML = '<span class="text-gray-400">-</span>';
+        }
+
+      } else {
+        row.innerHTML = '<span class="text-xs text-gray-400">-</span>';
+      }
+    } catch (error) {
+      console.error(`Failed to fetch metrics for client ${clientId}:`, error);
+      row.innerHTML = '<span class="text-xs text-gray-400">Error</span>';
+    }
+  }
+}
+
+// Update client speeds on load and every 30 seconds
+if (document.querySelector('[id^="client-speed-"]')) {
+  updateClientSpeeds();
+  setInterval(updateClientSpeeds, 30000);
+}
+
+// Real-time online status updates
+async function updateOnlineStatus() {
+  const serverId = {{ server.id }};
+  try {
+    const response = await fetch(`/api/servers/${serverId}/online`, {
+      credentials: 'same-origin'
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!data.success) return;
+    
+    const onlineSet = new Set(data.online);
+    document.querySelectorAll('td[data-client-name]').forEach(cell => {
+      const clientName = cell.dataset.clientName;
+      const clientStatus = cell.dataset.clientStatus;
+      
+      if (onlineSet.has(clientName)) {
+        cell.innerHTML = '<span class="online-badge px-2 py-1 bg-green-100 text-green-800 rounded text-xs"><i class="fas fa-wifi mr-1"></i>Online</span>';
+      } else if (clientStatus === 'active') {
+        cell.innerHTML = '<span class="status-badge px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">{{ t("status.active") }}</span>';
+      } else {
+        cell.innerHTML = '<span class="status-badge px-2 py-1 bg-red-100 text-red-800 rounded text-xs">{{ t("status.disabled") }}</span>';
+      }
+    });
+  } catch (e) {
+    console.error('Failed to update online status:', e);
+  }
+}
+
+// Poll every 5 seconds
+setInterval(updateOnlineStatus, 5000);
+{% endif %}
+</script>
+{% endblock %}

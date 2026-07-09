@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <script>
+        tailwind = { config: { devtools: false } };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    {% block styles %}{% endblock %}
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .mobile-menu {
+            display: none;
+        }
+        .mobile-menu.active {
+            display: block;
+        }
+        .language-dropdown {
+            display: none;
+        }
+        .language-dropdown.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    {% if user %}
+    <!-- Navigation -->
+    <nav class="gradient-bg shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <i class="fas fa-shield-alt text-white text-2xl mr-2"></i>
+                        <span class="text-white text-xl font-bold">{{ app_name }}</span>
+                    </div>
+                    <!-- Desktop Menu -->
+                    <div class="hidden md:ml-6 md:flex md:space-x-8">
+                        <a href="/dashboard" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
+                            <i class="fas fa-tachometer-alt mr-2"></i>{{ t('menu.dashboard') }}
+                        </a>
+                        <a href="/servers" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
+                            <i class="fas fa-server mr-2"></i>{{ t('menu.servers') }}
+                        </a>
+                        {% if user.role == 'admin' %}
+                        <a href="/settings" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
+                            <i class="fas fa-cog mr-2"></i>{{ t('menu.settings') }}
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <!-- Language Selector -->
+                    <div class="relative mr-4">
+                        <button onclick="toggleLanguageDropdown()" class="text-white hover:text-gray-200 flex items-center focus:outline-none">
+                            {% set currentLang = current_language %}
+                            {% for lang in languages %}
+                                {% if lang.code == currentLang %}
+                                    <span class="mr-2">{{ getFlag(lang.code) }}</span>
+                                {% endif %}
+                            {% endfor %}
+                            <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                        </button>
+                        <div id="languageDropdown" class="language-dropdown absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50">
+                            {% for lang in languages %}
+                            <form method="POST" action="/language/change" class="block">
+                                <input type="hidden" name="language" value="{{ lang.code }}">
+                                <input type="hidden" name="redirect" value="{{ current_uri }}">
+                                <button type="submit" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center
+                                    {% if lang.code == current_language %}bg-purple-50 font-medium{% endif %}">
+                                    <span class="mr-2">{{ getFlag(lang.code) }}</span>
+                                    <span>{{ lang.name }}</span>
+                                    {% if lang.code == current_language %}
+                                    <i class="fas fa-check text-purple-600 ml-auto"></i>
+                                    {% endif %}
+                                </button>
+                            </form>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <!-- User Menu (Desktop) -->
+                    <div class="hidden md:flex items-center">
+                        <span class="text-white mr-4">
+                            <i class="fas fa-user mr-1"></i>{{ user.name }}
+                        </span>
+                        <a href="/logout" class="text-white hover:text-gray-200">
+                            <i class="fas fa-sign-out-alt mr-1"></i>{{ t('menu.logout') }}
+                        </a>
+                    </div>
+
+                    <!-- Mobile menu button -->
+                    <div class="md:hidden flex items-center ml-4">
+                        <button onclick="toggleMobileMenu()" type="button" class="text-white hover:text-gray-200 focus:outline-none">
+                            <i class="fas fa-bars text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Menu -->
+        <div id="mobileMenu" class="mobile-menu md:hidden">
+            <div class="px-2 pt-2 pb-3 space-y-1">
+                <a href="/dashboard" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
+                    <i class="fas fa-tachometer-alt mr-2"></i>{{ t('menu.dashboard') }}
+                </a>
+                <a href="/servers" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
+                    <i class="fas fa-server mr-2"></i>{{ t('menu.servers') }}
+                </a>
+                {% if user.role == 'admin' %}
+                <a href="/settings" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
+                    <i class="fas fa-cog mr-2"></i>{{ t('menu.settings') }}
+                </a>
+                {% endif %}
+                <div class="border-t border-purple-500 my-2"></div>
+                <div class="text-white px-3 py-2">
+                    <i class="fas fa-user mr-1"></i>{{ user.name }}
+                </div>
+                <a href="/logout" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
+                    <i class="fas fa-sign-out-alt mr-1"></i>{{ t('menu.logout') }}
+                </a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Main Content -->
+    <main class="{% if user %}py-10{% endif %}">
+        {% block content %}{% endblock %}
+    </main>
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[9999]" style="display:none;">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                    <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                </div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900 mt-4" id="confirmModalTitle">Подтверждение</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500" id="confirmModalMessage">Вы уверены?</p>
+                </div>
+                <div class="items-center px-4 py-3 flex justify-center gap-4">
+                    <button id="confirmModalCancel" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        Отмена
+                    </button>
+                    <button id="confirmModalOk" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500">
+                        Удалить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-auto">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-gray-500 text-sm">
+                {{ app_name }} &copy; 2025 | Open Source VPN Management Panel
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.toggle('active');
+        }
+
+        function toggleLanguageDropdown() {
+            const dropdown = document.getElementById('languageDropdown');
+            dropdown.classList.toggle('active');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const languageButton = event.target.closest('button[onclick="toggleLanguageDropdown()"]');
+            const dropdown = document.getElementById('languageDropdown');
+            const isInsideDropdown = dropdown && dropdown.contains(event.target);
+            
+            // Don't close if clicking the button or inside dropdown (except submit buttons)
+            if (!languageButton && !isInsideDropdown && dropdown) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        // Ensure dropdown stays open when form is being submitted
+        document.addEventListener('submit', function(event) {
+            if (event.target.closest('#languageDropdown')) {
+                // Form will submit normally, dropdown will close on page reload
+            }
+        });
+
+        // Custom confirmation modal function (replaces native confirm)
+        window.showConfirmModal = function(message, title) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('confirmModal');
+                const titleEl = document.getElementById('confirmModalTitle');
+                const msgEl = document.getElementById('confirmModalMessage');
+                const okBtn = document.getElementById('confirmModalOk');
+                const cancelBtn = document.getElementById('confirmModalCancel');
+                
+                if (!modal) {
+                    // Fallback to native confirm if modal not found
+                    resolve(confirm(message));
+                    return;
+                }
+                
+                titleEl.textContent = title || 'Подтверждение';
+                msgEl.textContent = message || 'Вы уверены?';
+                
+                modal.style.display = 'flex';
+                modal.classList.remove('hidden');
+                
+                function cleanup() {
+                    modal.style.display = 'none';
+                    modal.classList.add('hidden');
+                    okBtn.removeEventListener('click', onOk);
+                    cancelBtn.removeEventListener('click', onCancel);
+                    modal.removeEventListener('click', onBackdrop);
+                }
+                
+                function onOk() {
+                    cleanup();
+                    resolve(true);
+                }
+                
+                function onCancel() {
+                    cleanup();
+                    resolve(false);
+                }
+                
+                function onBackdrop(e) {
+                    if (e.target === modal) {
+                        cleanup();
+                        resolve(false);
+                    }
+                }
+                
+                okBtn.addEventListener('click', onOk);
+                cancelBtn.addEventListener('click', onCancel);
+                modal.addEventListener('click', onBackdrop);
+            });
+        };
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
