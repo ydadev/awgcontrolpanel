@@ -22,6 +22,8 @@ VPN_SUBNET="${PROTOCOL_VPN_SUBNET:-10.8.1.0/24}"
 SERVER_ADDR="${VPN_SUBNET%0/24}1/24"
 CONFIG_DIR="/etc/wireguard"
 CONFIG_FILE="${CONFIG_DIR}/${WG_IFACE}.conf"
+DEFAULT_IFACE="$(ip route | awk ''/default/ {print $5; exit}'')"
+DEFAULT_IFACE="${DEFAULT_IFACE:-eth0}"
 
 if ! command -v wg >/dev/null 2>&1 || ! command -v wg-quick >/dev/null 2>&1; then
   apt-get update
@@ -42,8 +44,8 @@ PrivateKey = ${PRIVATE_KEY}
 Address = ${SERVER_ADDR}
 ListenPort = ${VPN_PORT}
 SaveConfig = false
-PostUp = sysctl -w net.ipv4.ip_forward=1 >/dev/null; IFACE=\$(ip route | awk ''/default/ {print \$5; exit}''); iptables -t nat -C POSTROUTING -s ${VPN_SUBNET} -o \$IFACE -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s ${VPN_SUBNET} -o \$IFACE -j MASQUERADE; iptables -C FORWARD -i ${WG_IFACE} -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ${WG_IFACE} -j ACCEPT; iptables -C FORWARD -o ${WG_IFACE} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -o ${WG_IFACE} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-PostDown = IFACE=\$(ip route | awk ''/default/ {print \$5; exit}''); iptables -t nat -D POSTROUTING -s ${VPN_SUBNET} -o \$IFACE -j MASQUERADE 2>/dev/null || true; iptables -D FORWARD -i ${WG_IFACE} -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o ${WG_IFACE} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+PostUp = sysctl -w net.ipv4.ip_forward=1 >/dev/null; iptables -t nat -C POSTROUTING -s ${VPN_SUBNET} -o ${DEFAULT_IFACE} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s ${VPN_SUBNET} -o ${DEFAULT_IFACE} -j MASQUERADE; iptables -C FORWARD -i ${WG_IFACE} -j ACCEPT 2>/dev/null || iptables -A FORWARD -i ${WG_IFACE} -j ACCEPT; iptables -C FORWARD -o ${WG_IFACE} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -A FORWARD -o ${WG_IFACE} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -s ${VPN_SUBNET} -o ${DEFAULT_IFACE} -j MASQUERADE 2>/dev/null || true; iptables -D FORWARD -i ${WG_IFACE} -j ACCEPT 2>/dev/null || true; iptables -D FORWARD -o ${WG_IFACE} -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
 EOF
 
 chmod 600 "$CONFIG_FILE"
