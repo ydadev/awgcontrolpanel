@@ -20,15 +20,17 @@ jobs:
           from pathlib import Path
           path = Path('public/index.php')
           text = path.read_text()
+          marker = "Router::post('/api/servers/{id}/protocols/install'"
           old = '        $result = InstallProtocolManager::activate($server, $protocol, []);'
           new = '        $result = InstallProtocolManager::activate($server, $protocol, $installOptions);'
-          marker = "$installOptions = [];"
-          if new not in text:
-              if marker not in text:
-                  raise SystemExit('installOptions block missing')
-              if old not in text:
-                  raise SystemExit('activate call not found')
-              text = text.replace(old, new, 1)
+          if marker not in text:
+              raise SystemExit('API install route marker not found')
+          before, after = text.split(marker, 1)
+          if new not in after:
+              if old not in after:
+                  raise SystemExit('API activate call not found')
+              after = after.replace(old, new, 1)
+          text = before + marker + after
           path.write_text(text)
           PY
       - name: Validate PHP syntax
