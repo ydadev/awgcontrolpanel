@@ -1,0 +1,53 @@
+name: apply-vpnserver-sudo-patch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-vpnserver-sudo-patch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          cat > /tmp/sudo.patch <<'PATCH'
+          diff --git a/inc/VpnServer.php b/inc/VpnServer.php
+          --- a/inc/VpnServer.php
+          +++ b/inc/VpnServer.php
+          @@ -495,14 +495,17 @@ class VpnServer
+                   }
+               } else {
+                   $needsSudo = ($sudo ?? false) && strtolower((string) ($this->data['username'] ?? '')) !== 'root';
+          +        $preparedCommand = $pathPrefix . $command;
+                   if ($needsSudo) {
+          -            // Suppress sudo prompt text to keep command output machine-parseable.
+          -            $command = "echo '{$this->data['password']}' | sudo -S -p '' " . $command;
+          +            // Suppress sudo prompt text and run the whole payload under sudo.
+          +            // This keeps heredoc/multiline scripts from stealing sudo's stdin.
+          +            $passwordArg = escapeshellarg((string) $this->data['password'] . "\\n");
+          +            $payloadArg = escapeshellarg($preparedCommand);
+          +            $preparedCommand = "printf %s {$passwordArg} | sudo -S -p '' bash -lc {$payloadArg}";
+                   }
+          
+          -        $preparedCommand = $pathPrefix . $command;
+                   $escapedCommand = escapeshellarg($preparedCommand);
+          
+                   $sshOptions .= " -o PreferredAuthentications=password -o PubkeyAuthentication=no";
+          PATCH
+          sed -i 's/^          //' /tmp/sudo.patch
+          git apply /tmp/sudo.patch
+      - name: Validate PHP syntax
+        run: php -l inc/VpnServer.php
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add inc/VpnServer.php
+          git commit -m "Fix sudo execution for multiline SSH commands"
+          git push
