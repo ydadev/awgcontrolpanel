@@ -886,6 +886,10 @@ class InstallProtocolManager
                 'host key verification failed',
                 'timed out',
                 'operation timed out',
+                'failed to build',
+                'did not complete successfully',
+                'exit code:',
+                'unbound variable',
             ];
             foreach ($hardErrors as $needle) {
                 if ($needle !== '' && strpos($lower, $needle) !== false) {
