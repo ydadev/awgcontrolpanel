@@ -1,0 +1,42 @@
+name: patch-skip-docker-build-lines
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-skip-docker-build-lines.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch key-value parser
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('inc/InstallProtocolManager.php')
+          text = path.read_text()
+          old = """            $line = trim($line);\n            if ($line === '')\n                continue;\n            $line = preg_replace('/^\\+\\s*/', '', $line);\n"""
+          new = """            $line = trim($line);\n            if ($line === '')\n                continue;\n            if (strpos($line, '#') === 0)\n                continue;\n            $line = preg_replace('/^\\+\\s*/', '', $line);\n"""
+          if new in text:
+              raise SystemExit('already patched')
+          if old not in text:
+              raise SystemExit('target block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Lint PHP
+        run: php -l inc/InstallProtocolManager.php
+      - name: Commit and push
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add inc/InstallProtocolManager.php
+          git commit -m "Ignore Docker build progress in script parser"
+          git push
