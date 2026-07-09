@@ -935,6 +935,8 @@ class InstallProtocolManager
             $line = trim($line);
             if ($line === '')
                 continue;
+            if (strpos($line, '#') === 0)
+                continue;
             $line = preg_replace('/^\+\s*/', '', $line);
 
             // Match "Variable: name=value" format (for protocol variables)
