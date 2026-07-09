@@ -753,7 +753,7 @@ Router::post('/servers/{id}/protocols/activate', function ($params) {
             return;
         }
 
-        $result = InstallProtocolManager::activate($server, $protocol, []);
+        $result = InstallProtocolManager::activate($server, $protocol, $installOptions);
         echo json_encode($result);
         Logger::appendInstall($serverId, 'HTTP activate finished ok');
     } catch (Exception $e) {
@@ -2672,6 +2672,23 @@ Router::post('/api/servers/{id}/protocols/install', function ($params) {
         $input = $_POST;
     }
     $protocolId = isset($input['protocol_id']) ? (int) $input['protocol_id'] : 0;
+    $installOptions = [];
+    foreach (['install_options', 'options'] as $optionsKey) {
+        if (isset($input[$optionsKey]) && is_array($input[$optionsKey])) {
+            $installOptions = array_merge($installOptions, $input[$optionsKey]);
+        }
+    }
+    foreach (['server_port', 'container_name', 'decision_token', 'decision_mode', 'skip_backup'] as $optionKey) {
+        if (array_key_exists($optionKey, $input)) {
+            $installOptions[$optionKey] = $input[$optionKey];
+        }
+    }
+    if (isset($installOptions['server_port'])) {
+        $installOptions['server_port'] = (int) $installOptions['server_port'];
+        if ($installOptions['server_port'] <= 0) {
+            unset($installOptions['server_port']);
+        }
+    }
 
     if ($protocolId <= 0) {
         http_response_code(400);
