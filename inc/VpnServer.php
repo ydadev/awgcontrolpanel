@@ -496,12 +496,15 @@ class VpnServer
             );
         } else {
             $needsSudo = ($sudo ?? false) && strtolower((string) ($this->data['username'] ?? '')) !== 'root';
+            $preparedCommand = $pathPrefix . $command;
             if ($needsSudo) {
-                // Suppress sudo prompt text to keep command output machine-parseable.
-                $command = "echo '{$this->data['password']}' | sudo -S -p '' " . $command;
+                // Suppress sudo prompt text and run the whole payload under sudo.
+                // This keeps heredoc/multiline scripts from stealing sudo's stdin.
+                $passwordArg = escapeshellarg((string) $this->data['password'] . "\\n");
+                $payloadArg = escapeshellarg($preparedCommand);
+                $preparedCommand = "printf %s {$passwordArg} | sudo -S -p '' bash -lc {$payloadArg}";
             }
 
-            $preparedCommand = $pathPrefix . $command;
             $escapedCommand = escapeshellarg($preparedCommand);
 
             $sshOptions .= " -o PreferredAuthentications=password -o PubkeyAuthentication=no";
