@@ -29,20 +29,14 @@ if "raw_wireguard_config" not in public:
         "            if ($protocol) {\n                $clientData['show_text_content'] = !empty($protocol['show_text_content']);\n                $protocolSlug = $protocol['slug'] ?? '';\n                $isAwg2 = ($protocolSlug === 'awg2');\n            }\n            $isWireguardFamily = in_array($protocolSlug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true);\n            if ($protocol && ($protocol['output_template'] ?? '') !== '') {",
         "client view wireguard family detection",
     )
-    awg2_block = """            if ($isAwg2 && !empty($clientData['config'])) {
-                try {
-                    // Generate QR code as data URI for vpn:// URL
-                    require_once __DIR__ . '/../inc/QrUtil.php';
-                    $qrCodeVpnUrl = QrUtil::pngBase64ForVpnUrl($clientData['config'], 'awg2', 300, 1, 'AWG2 VPN URL');
-                    
-                    // Generate vpn:// URL string using vpn:// format (JSON + zlib)
-                    require_once __DIR__ . '/../inc/QrUtil.php';
-                    $vpnUrlConfig = 'vpn://' . QrUtil::encodeVpnUrlConf($clientData['config'], 'awg2');
-                } catch (Exception $e) {
-                    // Ignore errors, just don't show the second QR
-                }
-            }
-"""
+
+    awg2_start = public.find("            if ($isAwg2 && !empty($clientData['config'])) {")
+    if awg2_start == -1:
+        raise SystemExit("Could not find patch target: AWG2 vpn URL block start")
+    outer_catch = public.find("        } catch (Exception $e) {", awg2_start)
+    if outer_catch == -1:
+        raise SystemExit("Could not find patch target: client view outer catch after AWG2 block")
+    awg2_block = public[awg2_start:outer_catch]
     raw_block = awg2_block + """
             if ($isWireguardFamily && !empty($clientData['config'])) {
                 $rawWireguardConfig = (string) $clientData['config'];
@@ -61,7 +55,7 @@ if "raw_wireguard_config" not in public:
                 }
             }
 """
-    public = replace_once(public, awg2_block, raw_block, "client view raw config generation")
+    public = public[:awg2_start] + raw_block + public[outer_catch:]
     public = replace_once(
         public,
         "            'vpn_url_config' => $vpnUrlConfig,\n            'is_awg2' => $isAwg2",
