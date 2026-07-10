@@ -436,8 +436,3 @@ MIT
 
 `awgcontrolpanel` is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Thank you to the original project author(s) for publishing the base panel and making this customization possible.
 
-## Support the Project
-
-If you find this project helpful, you can support its development through a donation via Tribute: https://t.me/tribute/app?startapp=dzX1
-
-# amneziavpnphp
