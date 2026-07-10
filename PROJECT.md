@@ -1,6 +1,6 @@
 # awgcontrolpanel
 
-`awgcontrolpanel` is a planned corporate control panel for AmneziaWG/WireGuard VPN servers. The project is based on the public `amneziavpnphp` idea, but will be gradually simplified, hardened, and adapted for private infrastructure.
+`awgcontrolpanel` is a planned corporate control panel for AmneziaWG/WireGuard VPN servers. The project is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp), with gratitude to the original project author(s), and is being gradually simplified, hardened, and adapted for private infrastructure.
 
 This repository must not contain real secrets, production IP addresses, internal domains, private keys, VPN client configs, database dumps, or screenshots with sensitive data. Only safe `.example` files with fictional data are allowed.
 
@@ -10,9 +10,9 @@ Expected local workspace:
 
 ```text
 awgcontrolpanel/
-├── amneziavpnphp/          # clean upstream copy for comparison only
-├── awgcontrolpanel/        # working repository
-└── local/                  # private local data outside Git
+в”њв”Ђв”Ђ amneziavpnphp/          # clean upstream copy for comparison only
+в”њв”Ђв”Ђ awgcontrolpanel/        # working repository
+в””в”Ђв”Ђ local/                  # private local data outside Git
 ```
 
 Current state on 2026-07-09:
@@ -77,6 +77,17 @@ Safe project preparation has been completed:
 - added `.dockerignore` to keep secrets and local artifacts out of Docker build context.
 - added `scripts/preflight-test-server.sh` for Ubuntu VM readiness checks before first compose start.
 
+Current application changes tested on 2026-07-10:
+
+- the working project is published to `https://github.com/ydadev/awgcontrolpanel`;
+- the panel was installed and tested from GitHub on Ubuntu 24.04 test VM `10.10.11.229`;
+- a separate Ubuntu 24.04 VPN node VM `10.10.11.230` was used for WireGuard Standard and AmneziaWG 2.0 testing;
+- WireGuard Standard client creation was fixed for native host `wg0` peers;
+- AmneziaWG 2.0 install/build handling was fixed for the test environment;
+- client pages now show additional raw WireGuard-style QR/text connection data:
+  - `wireguard-standard` clients receive normal WireGuard app-compatible config;
+  - `awg2` and AmneziaWG-family clients receive AmneziaWG app-compatible config while keeping the existing Amnezia VPN app and `vpn://` outputs.
+
 ## Major Changes
 
 ### 2026-07-09
@@ -100,3 +111,12 @@ Safe project preparation has been completed:
 - Made `vpn_servers.password` nullable for SSH-key-only server records on fresh installs.
 - Added a preflight script for the Ubuntu 24.04 test VM.
 - Confirmed that no business logic was changed during this step.
+
+### 2026-07-10
+
+- Published the working project to GitHub as `ydadev/awgcontrolpanel`.
+- Installed the panel from GitHub on the Ubuntu 24.04 test server.
+- Tested WireGuard Standard and AmneziaWG 2.0 on a separate Ubuntu 24.04 VPN node.
+- Fixed install/client-generation issues found during test deployment.
+- Added raw WireGuard-style QR Code and text connection blocks to client pages.
+- Documented that this project is based on `infosave2007/amneziavpnphp` and added attribution/thanks.
