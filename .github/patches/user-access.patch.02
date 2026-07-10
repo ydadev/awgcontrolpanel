@@ -1,0 +1,120 @@
+         $users = $this->getAllUsers();
++        $allServers = VpnServer::listAll();
++        $userServerAccess = UserServerAccess::mapForUsers();
+         $apiKey = $this->getApiKey('openrouter');
+ 
+         // LDAP data for embedded tab
+@@ -45,6 +47,8 @@ class SettingsController {
+         $data = [
+             'translation_stats' => $stats,
+             'users' => $users,
++            'all_servers' => $allServers,
++            'user_server_access' => $userServerAccess,
+             'openrouter_key' => $apiKey,
+             // LDAP
+             'config' => $config,
+@@ -202,6 +206,56 @@ class SettingsController {
+         header('Location: /settings#users');
+         exit;
+     }
++
++    public function saveUserServerAccess($userId) {
++        $user = Auth::user();
++        if ($user['role'] !== 'admin') {
++            http_response_code(403);
++            echo 'Forbidden';
++            return;
++        }
++
++        $userId = (int)$userId;
++        if ($userId <= 0) {
++            $_SESSION['settings_error'] = 'Invalid user';
++            header('Location: /settings#users');
++            exit;
++        }
++
++        $stmt = $this->pdo->prepare("SELECT id, role FROM users WHERE id = ?");
++        $stmt->execute([$userId]);
++        $target = $stmt->fetch();
++        if (!$target) {
++            $_SESSION['settings_error'] = 'User not found';
++            header('Location: /settings#users');
++            exit;
++        }
++
++        if ($target['role'] === 'admin') {
++            $_SESSION['settings_error'] = 'Server access is managed only for regular users';
++            header('Location: /settings#users');
++            exit;
++        }
++
++        $serverIds = $_POST['server_ids'] ?? [];
++        $createClientServerIds = $_POST['create_client_server_ids'] ?? [];
++        if (!is_array($serverIds)) {
++            $serverIds = [];
++        }
++        if (!is_array($createClientServerIds)) {
++            $createClientServerIds = [];
++        }
++
++        try {
++            UserServerAccess::replaceForUser($userId, $serverIds, $createClientServerIds);
++            $_SESSION['settings_success'] = 'User server access updated';
++        } catch (Throwable $e) {
++            $_SESSION['settings_error'] = 'Failed to update server access: ' . $e->getMessage();
++        }
++
++        header('Location: /settings#users');
++        exit;
++    }
+     
+     public function deleteUser($userId) {
+         $user = Auth::user();
+diff --git a/docs/install-from-github.md b/docs/install-from-github.md
+index 850f68d..9a17ffc 100644
+--- a/docs/install-from-github.md
++++ b/docs/install-from-github.md
+@@ -99,3 +99,9 @@ The copied/customized project keeps the existing Amnezia VPN app outputs and add
+ - WireGuard Standard clients: normal WireGuard QR Code and text configuration.
+ - AmneziaWG/AWG2 clients: AmneziaWG app-compatible QR Code and text configuration.
+ - AWG2 clients still keep the existing `vpn://` QR Code and text URL.
++
++## User Access Model
++
++Regular users do not add or manage VPN servers. Administrators create/manage servers, then assign each regular user access to selected servers in Settings -> Users.
++
++For every assigned server, the administrator can also allow or deny self-service client config creation. If server access is removed from a user, that user's active configs on the removed server are disabled.
+diff --git a/inc/UserServerAccess.php b/inc/UserServerAccess.php
+new file mode 100644
+index 0000000..a063589
+--- /dev/null
++++ b/inc/UserServerAccess.php
+@@ -0,0 +1,161 @@
++<?php
++
++require_once __DIR__ . '/DB.php';
++require_once __DIR__ . '/VpnClient.php';
++
++/**
++ * User-to-server access control.
++ *
++ * Admins are handled by route/controller checks. This class stores explicit
++ * access for regular users and revokes their active clients when access is
++ * removed from a server.
++ */
++class UserServerAccess
++{
++    public static function canViewServer(int $userId, int $serverId): bool
++    {
++        $pdo = DB::conn();
++        $stmt = $pdo->prepare('
++            SELECT 1
++            FROM user_server_access
++            WHERE user_id = ? AND server_id = ? AND can_view = 1
++            LIMIT 1
++        ');
++        $stmt->execute([$userId]);
++        return (bool) $stmt->fetchColumn();
++    }
++
++    public static function canCreateClients(int $userId, int $serverId): bool
