@@ -113,7 +113,7 @@ index 0000000..a063589
 +            WHERE user_id = ? AND server_id = ? AND can_view = 1
 +            LIMIT 1
 +        ');
-+        $stmt->execute([$userId]);
++        $stmt->execute([$userId, $serverId]);
 +        return (bool) $stmt->fetchColumn();
 +    }
 +
