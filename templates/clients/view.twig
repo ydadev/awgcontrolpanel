@@ -3,7 +3,7 @@
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 py-8">
   <h1 class="text-3xl font-bold mb-6">{{ client.name }}</h1>
-  
+
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
     <div class="bg-white rounded shadow p-6">
       <h3 class="font-bold mb-4">{{ t('clients.configuration') }}</h3>
@@ -40,7 +40,7 @@
         {% endif %}
       </div>
     </div>
-    
+
     <div class="bg-white rounded shadow p-6">
       <div class="flex justify-between items-center mb-4">
         <h3 class="font-bold">{{ t('clients.traffic_stats') }}</h3>
@@ -64,7 +64,7 @@
       </dl>
     </div>
   </div>
-  
+
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
     <div class="bg-white rounded shadow p-6">
       <h3 class="font-bold mb-4">{{ t('clients.expiration') }}</h3>
@@ -102,7 +102,7 @@
         </button>
       </form>
     </div>
-    
+
     <div class="bg-white rounded shadow p-6">
       <h3 class="font-bold mb-4">{{ t('clients.traffic_limit') }}</h3>
       <form onsubmit="updateTrafficLimit(event, {{ client.id }})" class="space-y-3">
@@ -143,7 +143,7 @@
       </form>
     </div>
   </div>
-  
+
   {% if client.qr_code %}
   <div class="bg-white rounded shadow p-6 text-center">
     <h3 class="font-bold mb-4">QR Code (Simple)</h3>
@@ -167,6 +167,21 @@
       <code class="text-sm break-all">{{ vpn_url_config }}</code>
     </div>
     <p class="text-sm text-gray-600 mt-2">Copy this vpn:// URL to import configuration</p>
+  </div>
+  {% endif %}
+
+  {% if raw_wireguard_qr_code %}
+  <div class="bg-white rounded shadow p-6 text-center mt-6">
+    <h3 class="font-bold mb-4">QR Code ({{ raw_wireguard_title }})</h3>
+    <img src="{{ raw_wireguard_qr_code }}" alt="{{ raw_wireguard_title }} QR Code" class="mx-auto" style="max-width: 300px; width: 100%; height: auto;">
+    <p class="text-sm text-gray-600 mt-2">{{ raw_wireguard_hint }}</p>
+  </div>
+  {% endif %}
+
+  {% if raw_wireguard_config %}
+  <div class="bg-white rounded shadow p-6 mt-6">
+    <h3 class="font-bold mb-4">{{ raw_wireguard_title }} Text Configuration</h3>
+    <pre class="mb-0 bg-gray-100 p-4 rounded text-left" style="white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;">{{ raw_wireguard_config }}</pre>
   </div>
   {% endif %}
 
@@ -209,13 +224,13 @@ function toggleTrafficEdit() {
 
 async function updateExpiration(event, clientId) {
   event.preventDefault();
-  
+
   const select = document.getElementById('expirationSelect');
   const customInput = document.getElementById('expirationSeconds');
-  
+
   let expiresAt = null;
   let displayText = '{{ t("clients.never_expires") }}';
-  
+
   if (select.value === 'custom' && customInput.value) {
     // Convert seconds to timestamp
     const seconds = parseInt(customInput.value);
@@ -237,7 +252,7 @@ async function updateExpiration(event, clientId) {
     alert('Please select an option');
     return;
   }
-  
+
   try {
     const response = await fetch(`/clients/${clientId}/set-expiration`, {
       method: 'POST',
@@ -247,9 +262,9 @@ async function updateExpiration(event, clientId) {
       },
       body: JSON.stringify({ expires_at: expiresAt })
     });
-    
+
     const data = await response.json();
-    
+
     if (response.ok && data.success === true) {
       alert('Expiration updated successfully');
       document.getElementById('currentExpiration').textContent = displayText;
@@ -267,13 +282,13 @@ async function updateExpiration(event, clientId) {
 
 async function updateTrafficLimit(event, clientId) {
   event.preventDefault();
-  
+
   const select = document.getElementById('trafficSelect');
   const customInput = document.getElementById('trafficMegabytes');
-  
+
   let limitBytes = null;
   let displayText = '{{ t("clients.unlimited") }}';
-  
+
   if (select.value === 'custom' && customInput.value) {
     // Convert MB to bytes
     limitBytes = parseInt(customInput.value) * 1048576;
@@ -291,7 +306,7 @@ async function updateTrafficLimit(event, clientId) {
     alert('Please select an option');
     return;
   }
-  
+
   try {
     const response = await fetch(`/clients/${clientId}/set-traffic-limit`, {
       method: 'POST',
@@ -301,9 +316,9 @@ async function updateTrafficLimit(event, clientId) {
       },
       body: JSON.stringify({ traffic_limit: limitBytes })
     });
-    
+
     const data = await response.json();
-    
+
     if (response.ok && data.success === true) {
       alert('Traffic limit updated successfully');
       // Reload page to show updated traffic info
@@ -321,15 +336,15 @@ async function syncStats(clientId) {
     const response = await fetch(`/clients/${clientId}/sync-stats`, {
       method: 'POST'
     });
-    
+
     const data = await response.json();
-    
+
     if (data.success && data.stats) {
       // Update stats display
       document.getElementById('stat-sent').textContent = data.stats.sent;
       document.getElementById('stat-received').textContent = data.stats.received;
       document.getElementById('stat-total').textContent = data.stats.total;
-      document.getElementById('stat-last-seen').innerHTML = data.stats.is_online 
+      document.getElementById('stat-last-seen').innerHTML = data.stats.is_online
         ? '<span class="text-green-600"><i class="fas fa-circle text-xs"></i> ' + data.stats.last_seen + '</span>'
         : data.stats.last_seen;
     } else {

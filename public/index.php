@@ -271,8 +271,8 @@ Router::get('/dashboard', function () {
     // Also count clients with recent handshake (within 5 minutes) for WireGuard/AWG
     $pdo = DB::conn();
     $stmt = $pdo->query("
-        SELECT COUNT(*) as cnt FROM vpn_clients 
-        WHERE last_handshake IS NOT NULL 
+        SELECT COUNT(*) as cnt FROM vpn_clients
+        WHERE last_handshake IS NOT NULL
         AND last_handshake > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
         AND status = 'active'
     ");
@@ -1201,10 +1201,15 @@ Router::get('/clients/{id}', function ($params) {
         $protocolOutput = '';
         $qrCodeVpnUrl = '';
         $vpnUrlConfig = '';
+        $rawWireguardConfig = '';
+        $rawWireguardQrCode = '';
+        $rawWireguardTitle = '';
+        $rawWireguardHint = '';
         $isAwg2 = false;
         try {
             $pdo = DB::conn();
             $protocol = null;
+            $protocolSlug = '';
             if (!empty($clientData['protocol_id'])) {
                 $stmt = $pdo->prepare('SELECT * FROM protocols WHERE id = ? LIMIT 1');
                 $stmt->execute([(int) $clientData['protocol_id']]);
@@ -1220,6 +1225,7 @@ Router::get('/clients/{id}', function ($params) {
                 $protocolSlug = $protocol['slug'] ?? '';
                 $isAwg2 = ($protocolSlug === 'awg2');
             }
+            $isWireguardFamily = in_array($protocolSlug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true);
             if ($protocol && ($protocol['output_template'] ?? '') !== '') {
                 $slug = $protocol['slug'] ?? '';
                 $isWireguard = in_array($slug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true);
@@ -1231,16 +1237,33 @@ Router::get('/clients/{id}', function ($params) {
                     $protocolOutput = $clientData['config'] ?? '';
                 }
             }
-            
+
             // Generate second QR code and vpn:// config for AWG2
             if ($isAwg2 && !empty($clientData['config'])) {
                 try {
                     $qrCodeVpnUrl = VpnClient::generateQRCodeVpnUrl($clientData['config'], 'awg2');
-                    
+
                     // Generate vpn:// URL string using vpn:// format (JSON + zlib)
                     require_once __DIR__ . '/../inc/QrUtil.php';
                     $vpnUrlConfig = 'vpn://' . QrUtil::encodeVpnUrlConf($clientData['config'], 'awg2');
-                } catch (Exception $e) {
+
+            if ($isWireguardFamily && !empty($clientData['config'])) {
+                $rawWireguardConfig = (string) $clientData['config'];
+                if ($protocolSlug === 'wireguard-standard') {
+                    $rawWireguardTitle = 'WireGuard Config';
+                    $rawWireguardHint = 'Scan with a WireGuard-compatible app or copy the config below';
+                } else {
+                    $rawWireguardTitle = 'AmneziaWG Config';
+                    $rawWireguardHint = 'Scan with AmneziaWG app or copy the config below';
+                }
+                try {
+                    require_once __DIR__ . '/../inc/QrUtil.php';
+                    $rawWireguardQrCode = QrUtil::pngBase64($rawWireguardConfig, 300, 1, 'WireGuard config');
+                } catch (Throwable $e) {
+                    $rawWireguardQrCode = '';
+                }
+            }
+        } catch (Exception $e) {
                     // Ignore errors, just don't show the second QR
                 }
             }
@@ -1252,6 +1275,10 @@ Router::get('/clients/{id}', function ($params) {
             'protocol_output' => $protocolOutput,
             'qr_code_vpn_url' => $qrCodeVpnUrl,
             'vpn_url_config' => $vpnUrlConfig,
+            'raw_wireguard_config' => $rawWireguardConfig,
+            'raw_wireguard_qr_code' => $rawWireguardQrCode,
+            'raw_wireguard_title' => $rawWireguardTitle,
+            'raw_wireguard_hint' => $rawWireguardHint,
             'is_awg2' => $isAwg2
         ]);
     } catch (Exception $e) {
