@@ -70,15 +70,18 @@ replacement = """            // Generate second QR code and vpn:// config for AW
                     $rawWireguardQrCode = '';
                 }
             }
-        } catch (Exception $e) {"""
+        } catch (Exception $e) {
+            $protocolOutput = '';
+        }
+        View::render('clients/view.twig', ["""
 
 pattern = re.compile(
-    r"^            // Generate second QR code and vpn:// config for AWG2\n.*?^        \} catch \(Exception \$e\) \{",
+    r"^            // Generate second QR code and vpn:// config for AWG2\n.*?^        View::render\('clients/view\.twig', \[",
     re.MULTILINE | re.DOTALL,
 )
 public, count = pattern.subn(replacement, public, count=1)
 if count != 1:
-    raise SystemExit("Could not repair client view AWG2/raw WireGuard block")
+    raise SystemExit("Could not repair full client view render block")
 
 public_path.write_text(trim_trailing_whitespace(public), encoding="utf-8")
 
