@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -33,15 +34,26 @@ if "raw_wireguard_config" not in public:
         "            if ($protocol) {\n                $clientData['show_text_content'] = !empty($protocol['show_text_content']);\n                $protocolSlug = $protocol['slug'] ?? '';\n                $isAwg2 = ($protocolSlug === 'awg2');\n            }\n            $isWireguardFamily = in_array($protocolSlug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true);\n            if ($protocol && ($protocol['output_template'] ?? '') !== '') {",
         "client view wireguard family detection",
     )
+    public = replace_once(
+        public,
+        "            'vpn_url_config' => $vpnUrlConfig,\n            'is_awg2' => $isAwg2",
+        "            'vpn_url_config' => $vpnUrlConfig,\n            'raw_wireguard_config' => $rawWireguardConfig,\n            'raw_wireguard_qr_code' => $rawWireguardQrCode,\n            'raw_wireguard_title' => $rawWireguardTitle,\n            'raw_wireguard_hint' => $rawWireguardHint,\n            'is_awg2' => $isAwg2",
+        "client view template variables",
+    )
 
-    awg2_start = public.find("            if ($isAwg2 && !empty($clientData['config'])) {")
-    if awg2_start == -1:
-        raise SystemExit("Could not find patch target: AWG2 vpn URL block start")
-    outer_catch = public.find("        } catch (Exception $e) {", awg2_start)
-    if outer_catch == -1:
-        raise SystemExit("Could not find patch target: client view outer catch after AWG2 block")
-    awg2_block = public[awg2_start:outer_catch]
-    raw_block = awg2_block + """
+replacement = """            // Generate second QR code and vpn:// config for AWG2
+            if ($isAwg2 && !empty($clientData['config'])) {
+                try {
+                    $qrCodeVpnUrl = VpnClient::generateQRCodeVpnUrl($clientData['config'], 'awg2');
+
+                    // Generate vpn:// URL string using vpn:// format (JSON + zlib)
+                    require_once __DIR__ . '/../inc/QrUtil.php';
+                    $vpnUrlConfig = 'vpn://' . QrUtil::encodeVpnUrlConf($clientData['config'], 'awg2');
+                } catch (Exception $e) {
+                    // Ignore errors, just don't show the second QR
+                }
+            }
+
             if ($isWireguardFamily && !empty($clientData['config'])) {
                 $rawWireguardConfig = (string) $clientData['config'];
                 if ($protocolSlug === 'wireguard-standard') {
@@ -58,15 +70,17 @@ if "raw_wireguard_config" not in public:
                     $rawWireguardQrCode = '';
                 }
             }
-"""
-    public = public[:awg2_start] + raw_block + public[outer_catch:]
-    public = replace_once(
-        public,
-        "            'vpn_url_config' => $vpnUrlConfig,\n            'is_awg2' => $isAwg2",
-        "            'vpn_url_config' => $vpnUrlConfig,\n            'raw_wireguard_config' => $rawWireguardConfig,\n            'raw_wireguard_qr_code' => $rawWireguardQrCode,\n            'raw_wireguard_title' => $rawWireguardTitle,\n            'raw_wireguard_hint' => $rawWireguardHint,\n            'is_awg2' => $isAwg2",
-        "client view template variables",
-    )
-    public_path.write_text(trim_trailing_whitespace(public), encoding="utf-8")
+        } catch (Exception $e) {"""
+
+pattern = re.compile(
+    r"^            // Generate second QR code and vpn:// config for AWG2\n.*?^        \} catch \(Exception \$e\) \{",
+    re.MULTILINE | re.DOTALL,
+)
+public, count = pattern.subn(replacement, public, count=1)
+if count != 1:
+    raise SystemExit("Could not repair client view AWG2/raw WireGuard block")
+
+public_path.write_text(trim_trailing_whitespace(public), encoding="utf-8")
 
 
 template_path = Path("templates/clients/view.twig")
@@ -97,4 +111,4 @@ if "raw_wireguard_qr_code" not in template:
     )
     template_path.write_text(trim_trailing_whitespace(template), encoding="utf-8")
 
-print("Raw WireGuard/AmneziaWG client config patch applied or already present.")
+print("Raw WireGuard/AmneziaWG client config patch applied or repaired.")
