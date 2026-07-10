@@ -1,0 +1,79 @@
+diff --git a/PROJECT.md b/PROJECT.md
+index 94af341..740bf53 100644
+--- a/PROJECT.md
++++ b/PROJECT.md
+@@ -10,9 +10,9 @@ Expected local workspace:
+ 
+ ```text
+ awgcontrolpanel/
+-Р Р†РІР‚СњРЎС™Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ amneziavpnphp/          # clean upstream copy for comparison only
+-Р Р†РІР‚СњРЎС™Р Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ awgcontrolpanel/        # working repository
+-Р Р†РІР‚СњРІР‚СњР Р†РІР‚СњР вЂљР Р†РІР‚СњР вЂљ local/                  # private local data outside Git
++РІвЂќСљРІвЂќР‚РІвЂќР‚ amneziavpnphp/          # clean upstream copy for comparison only
++РІвЂќСљРІвЂќР‚РІвЂќР‚ awgcontrolpanel/        # working repository
++РІвЂќвЂќРІвЂќР‚РІвЂќР‚ local/                  # private local data outside Git
+ ```
+ 
+ Current state on 2026-07-09:
+@@ -87,6 +87,8 @@ Current application changes tested on 2026-07-10:
+ - client pages now show additional raw WireGuard-style QR/text connection data:
+   - `wireguard-standard` clients receive normal WireGuard app-compatible config;
+   - `awg2` and AmneziaWG-family clients receive AmneziaWG app-compatible config while keeping the existing Amnezia VPN app and `vpn://` outputs.
++- regular users no longer add or manage servers directly; administrators assign access to specific servers and may separately allow users to create their own configs.
++- removing a user's access to a server revokes/blocks that user's active client configs on that server.
+ 
+ ## Major Changes
+ 
+@@ -120,3 +122,4 @@ Current application changes tested on 2026-07-10:
+ - Fixed install/client-generation issues found during test deployment.
+ - Added raw WireGuard-style QR Code and text connection blocks to client pages.
+ - Documented that this project is based on `infosave2007/amneziavpnphp` and added attribution/thanks.
++- Added per-user server access controls for regular users, including optional self-service config creation and automatic client blocking when server access is removed.
+diff --git a/README.md b/README.md
+index af19ef1..efc5f2c 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,7 @@ Important changes in this copy:
+ - Client pages now keep the existing Amnezia VPN app outputs and additionally generate raw WireGuard-style QR/text configuration:
+   - WireGuard Standard clients get a normal WireGuard config QR and text block.
+   - AmneziaWG/AWG2 clients get an AmneziaWG app-compatible WireGuard-style config QR and text block.
++- Regular users no longer manage VPN servers directly. Administrators assign server access per user and can separately allow users to create their own client configs; removing server access disables that user's active configs on that server.
+ 
+ ## Features
+ 
+@@ -35,7 +36,7 @@ Important changes in this copy:
+ - QR code generation for mobile apps, including Amnezia VPN app, `vpn://` URL, WireGuard, and AmneziaWG app-compatible configs
+ - Multi-language interface (English, Russian, Spanish, German, French, Chinese)
+ - REST API with JWT authentication
+-- User authentication and access control
++- User authentication, roles, and per-user server access control
+ - **Automatic client expiration and traffic limit checks** via cron
+ 
+ ## Available Protocols
+@@ -49,7 +50,7 @@ Important changes in this copy:
+ - MTProxy (Telegram) (`mtproxy`)
+ - SMB Server (`smb`)
+ - AIVPN (`aivpn`) - https://github.com/infosave2007/aivpn
+-- Cloudflare WARP Proxy (`cf-warp`) Р Р†Р вЂљРІР‚Сњ transparent traffic proxying via Cloudflare
++- Cloudflare WARP Proxy (`cf-warp`) РІР‚вЂќ transparent traffic proxying via Cloudflare
+ 
+ 
+ ## Requirements
+@@ -136,7 +137,7 @@ JWT_SECRET=replace-with-at-least-32-random-characters
+ 
+ ### Add VPN Server
+ 
+-1. Servers Р Р†РІР‚В РІР‚в„ў Add Server
++1. Servers РІвЂ вЂ™ Add Server
+ 2. Enter: name, host IP, SSH port, username
+ 3. Choose authentication method: **Password** or **SSH Key**
+    - For SSH Key: Paste your private key (PEM/OpenSSH format)
+@@ -227,7 +228,7 @@ curl -X POST http://localhost:8082/api/servers/1/restore \
+ 
+ ### Protocol Management
+ 
+-Manage VPN protocols via **Settings Р Р†РІР‚В РІР‚в„ў Protocols**:
++Manage VPN protocols via **Settings РІвЂ вЂ™ Protocols**:
+ - Install/Uninstall protocols (WireGuard, AmneziaWG, OpenVPN, etc.)
+ - Configure protocol settings (ports, transport, obfuscation)
+ - **AI Assistant**: Use "Ask AI" to generate complex protocol configurations tailored to your needs (requires OpenRouter API key).
