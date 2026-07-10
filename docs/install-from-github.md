@@ -2,6 +2,8 @@
 
 This document assumes the inner `awgcontrolpanel/` directory is published as the repository root.
 
+This project is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Thanks to the original project author(s) for the base panel.
+
 Do not publish the outer workspace directory. The GitHub repository should contain this directory:
 
 ```text
@@ -89,3 +91,11 @@ docker compose up -d --build
 ```
 
 This deletes the test database volumes.
+
+## Current Client Config Outputs
+
+The copied/customized project keeps the existing Amnezia VPN app outputs and adds raw WireGuard-style outputs on client pages:
+
+- WireGuard Standard clients: normal WireGuard QR Code and text configuration.
+- AmneziaWG/AWG2 clients: AmneziaWG app-compatible QR Code and text configuration.
+- AWG2 clients still keep the existing `vpn://` QR Code and text URL.
