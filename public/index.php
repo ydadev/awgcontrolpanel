@@ -1246,6 +1246,10 @@ Router::get('/clients/{id}', function ($params) {
                     // Generate vpn:// URL string using vpn:// format (JSON + zlib)
                     require_once __DIR__ . '/../inc/QrUtil.php';
                     $vpnUrlConfig = 'vpn://' . QrUtil::encodeVpnUrlConf($clientData['config'], 'awg2');
+                } catch (Exception $e) {
+                    // Ignore errors, just don't show the second QR
+                }
+            }
 
             if ($isWireguardFamily && !empty($clientData['config'])) {
                 $rawWireguardConfig = (string) $clientData['config'];
@@ -1261,10 +1265,6 @@ Router::get('/clients/{id}', function ($params) {
                     $rawWireguardQrCode = QrUtil::pngBase64($rawWireguardConfig, 300, 1, 'WireGuard config');
                 } catch (Throwable $e) {
                     $rawWireguardQrCode = '';
-                }
-            }
-        } catch (Exception $e) {
-                    // Ignore errors, just don't show the second QR
                 }
             }
         } catch (Exception $e) {
