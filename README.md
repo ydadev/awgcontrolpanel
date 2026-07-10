@@ -1,8 +1,24 @@
-# Amnezia VPN Web Panel
+# awgcontrolpanel
 
 > Note for `awgcontrolpanel`: use `docs/deployment-ubuntu-24.04.md` for the first test stand. In this copy, the default SQL admin with `admin123` is disabled for fresh installs; the first admin is created from `.env`.
+>
+> This project is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Many thanks to the original project author(s) for the foundation.
 
-Web-based management panel for Amnezia AWG (WireGuard) VPN servers.
+Web-based management panel for AmneziaWG/WireGuard VPN servers, adapted from `amneziavpnphp` for the `awgcontrolpanel` test and customization branch.
+
+## Project Notes
+
+This repository is not a clean upstream mirror. It is a working copy used to adapt the original panel for our own AmneziaWG/WireGuard control panel.
+
+Important changes in this copy:
+
+- GitHub-based installation instructions for an Ubuntu 24.04 test server were added.
+- Fresh installs no longer create the old SQL default `admin123` account; the first admin is created from `.env`.
+- Test deployment defaults were adjusted for safer local testing.
+- WireGuard Standard and AmneziaWG 2.0 test deployment/client generation paths were fixed and tested on separate Ubuntu 24.04 VMs.
+- Client pages now keep the existing Amnezia VPN app outputs and additionally generate raw WireGuard-style QR/text configuration:
+  - WireGuard Standard clients get a normal WireGuard config QR and text block.
+  - AmneziaWG/AWG2 clients get an AmneziaWG app-compatible WireGuard-style config QR and text block.
 
 ## Features
 
@@ -16,7 +32,7 @@ Web-based management panel for Amnezia AWG (WireGuard) VPN servers.
 - **Scenario Testing**: Define and test different VPN connection scenarios across protocols
 - **Advanced Log Management**: View, search, and manage system and container logs
 - Traffic statistics monitoring
-- QR code generation for mobile apps
+- QR code generation for mobile apps, including Amnezia VPN app, `vpn://` URL, WireGuard, and AmneziaWG app-compatible configs
 - Multi-language interface (English, Russian, Spanish, German, French, Chinese)
 - REST API with JWT authentication
 - User authentication and access control
@@ -33,7 +49,7 @@ Web-based management panel for Amnezia AWG (WireGuard) VPN servers.
 - MTProxy (Telegram) (`mtproxy`)
 - SMB Server (`smb`)
 - AIVPN (`aivpn`) - https://github.com/infosave2007/aivpn
-- Cloudflare WARP Proxy (`cf-warp`) — transparent traffic proxying via Cloudflare
+- Cloudflare WARP Proxy (`cf-warp`) вЂ” transparent traffic proxying via Cloudflare
 
 
 ## Requirements
@@ -44,8 +60,8 @@ Web-based management panel for Amnezia AWG (WireGuard) VPN servers.
 ## Installation
 
 ```bash
-git clone https://github.com/infosave2007/amneziavpnphp.git
-cd amneziavpnphp
+git clone https://github.com/ydadev/awgcontrolpanel.git
+cd awgcontrolpanel
 cp .env.example .env
 
 # For Docker Compose V2 (recommended)
@@ -120,7 +136,7 @@ JWT_SECRET=replace-with-at-least-32-random-characters
 
 ### Add VPN Server
 
-1. Servers → Add Server
+1. Servers в†’ Add Server
 2. Enter: name, host IP, SSH port, username
 3. Choose authentication method: **Password** or **SSH Key**
    - For SSH Key: Paste your private key (PEM/OpenSSH format)
@@ -140,6 +156,14 @@ JWT_SECRET=replace-with-at-least-32-random-characters
 4. **Select traffic limit** (optional, default: unlimited)
 5. Click Create Client
 6. Download config or scan QR code
+
+Client pages provide several connection formats depending on the protocol:
+
+- Amnezia VPN app QR Code (Simple)
+- AWG2 `vpn://` QR Code and text URL, when available
+- raw WireGuard-style QR Code and text configuration
+  - normal WireGuard config for `wireguard-standard`
+  - AmneziaWG app-compatible config for `awg2` and other AmneziaWG-family protocols
 
 ### Manage Client Expiration
 
@@ -203,7 +227,7 @@ curl -X POST http://localhost:8082/api/servers/1/restore \
 
 ### Protocol Management
 
-Manage VPN protocols via **Settings → Protocols**:
+Manage VPN protocols via **Settings в†’ Protocols**:
 - Install/Uninstall protocols (WireGuard, AmneziaWG, OpenVPN, etc.)
 - Configure protocol settings (ports, transport, obfuscation)
 - **AI Assistant**: Use "Ask AI" to generate complex protocol configurations tailored to your needs (requires OpenRouter API key).
@@ -212,14 +236,14 @@ Manage VPN protocols via **Settings → Protocols**:
 
 WARP transparently proxies **all TCP traffic** from VPN clients through the Cloudflare network, hiding the server's real IP address.
 
-> **⚠️ Install WARP last** — after all other protocols (AWG, X-Ray, AIVPN, etc.). During installation, WARP automatically detects active VPN containers and interfaces and configures routing for each of them.
+> **вљ пёЏ Install WARP last** вЂ” after all other protocols (AWG, X-Ray, AIVPN, etc.). During installation, WARP automatically detects active VPN containers and interfaces and configures routing for each of them.
 
 **Supported protocols:**
-- **AWG / AWG2** — routing via container IP + host redsocks
-- **X-Ray VLESS** — `warp-out` outbound via SOCKS5 in X-Ray config
-- **AIVPN / WireGuard** — routing via host-level iptables + redsocks
+- **AWG / AWG2** вЂ” routing via container IP + host redsocks
+- **X-Ray VLESS** вЂ” `warp-out` outbound via SOCKS5 in X-Ray config
+- **AIVPN / WireGuard** вЂ” routing via host-level iptables + redsocks
 
-**Verification:** connect to VPN and open `https://1.1.1.1/cdn-cgi/trace` — the field `warp=on` confirms it's working.
+**Verification:** connect to VPN and open `https://1.1.1.1/cdn-cgi/trace` вЂ” the field `warp=on` confirms it's working.
 
 ### Scenario Testing & Logs
 
@@ -373,7 +397,7 @@ Add OpenRouter API key in Settings, then run:
 docker compose exec web php bin/translate_all.php
 ```
 
-Or translate via web interface: Settings → Auto-translate
+Or translate via web interface: Settings в†’ Auto-translate
 
 ## Structure
 
@@ -407,6 +431,10 @@ migrations/          - SQL migrations (executed in alphabetical order)
 ## License
 
 MIT
+
+## Credits
+
+`awgcontrolpanel` is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Thank you to the original project author(s) for publishing the base panel and making this customization possible.
 
 ## Support the Project
 
