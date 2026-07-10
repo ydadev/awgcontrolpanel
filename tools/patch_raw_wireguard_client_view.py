@@ -7,6 +7,10 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def trim_trailing_whitespace(text: str) -> str:
+    return "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
+
+
 public_path = Path("public/index.php")
 public = public_path.read_text(encoding="utf-8")
 
@@ -62,7 +66,7 @@ if "raw_wireguard_config" not in public:
         "            'vpn_url_config' => $vpnUrlConfig,\n            'raw_wireguard_config' => $rawWireguardConfig,\n            'raw_wireguard_qr_code' => $rawWireguardQrCode,\n            'raw_wireguard_title' => $rawWireguardTitle,\n            'raw_wireguard_hint' => $rawWireguardHint,\n            'is_awg2' => $isAwg2",
         "client view template variables",
     )
-    public_path.write_text(public, encoding="utf-8")
+    public_path.write_text(trim_trailing_whitespace(public), encoding="utf-8")
 
 
 template_path = Path("templates/clients/view.twig")
@@ -91,6 +95,6 @@ if "raw_wireguard_qr_code" not in template:
         raw_template + "  {% if protocol_output and client.show_text_content %}",
         "client view raw config template block",
     )
-    template_path.write_text(template, encoding="utf-8")
+    template_path.write_text(trim_trailing_whitespace(template), encoding="utf-8")
 
 print("Raw WireGuard/AmneziaWG client config patch applied or already present.")
