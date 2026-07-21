@@ -10,9 +10,9 @@ Expected local workspace:
 
 ```text
 awgcontrolpanel/
-в”њв”Ђв”Ђ amneziavpnphp/          # clean upstream copy for comparison only
-в”њв”Ђв”Ђ awgcontrolpanel/        # working repository
-в””в”Ђв”Ђ local/                  # private local data outside Git
+├── amneziavpnphp/          # clean upstream copy for comparison only
+├── awgcontrolpanel/        # working repository
+└── local/                  # private local data outside Git
 ```
 
 Current state on 2026-07-09:
@@ -43,7 +43,7 @@ Future routing goal:
 - Russian resources go through a Russian VPN node;
 - all other resources go through an overseas VPN node.
 
-This routing is documented as a future goal only and is not implemented at this stage.
+The safe control-plane foundation for this routing is implemented as phase 1. It stores desired routing state, permissions, user groups, and revisions, but it does not yet change the live VPN packet path until the routing agent/data-plane phase is completed.
 
 ## Security Decisions
 
@@ -80,13 +80,26 @@ Safe project preparation has been completed:
 Current application changes tested on 2026-07-10:
 
 - the working project is published to `https://github.com/ydadev/awgcontrolpanel`;
-- the panel was installed and tested from GitHub on Ubuntu 24.04 test VM `10.10.11.229`;
-- a separate Ubuntu 24.04 VPN node VM `10.10.11.230` was used for WireGuard Standard and AmneziaWG 2.0 testing;
+- the panel was installed and tested from GitHub on an Ubuntu 24.04 test VM;
+- a separate Ubuntu 24.04 VPN node VM was used for WireGuard Standard and AmneziaWG 2.0 testing;
 - WireGuard Standard client creation was fixed for native host `wg0` peers;
 - AmneziaWG 2.0 install/build handling was fixed for the test environment;
 - client pages now show additional raw WireGuard-style QR/text connection data:
   - `wireguard-standard` clients receive normal WireGuard app-compatible config;
   - `awg2` and AmneziaWG-family clients receive AmneziaWG app-compatible config while keeping the existing Amnezia VPN app and `vpn://` outputs.
+- regular users no longer add or manage servers directly; administrators assign access to specific servers and may separately allow users to create their own connection configs.
+- VPN client records are treated as user-owned connections; administrators choose the connection owner during creation, while regular users can only create connections for their own account when allowed.
+- removing a user's access to a server revokes/blocks that user's active client configs on that server.
+- phase 1 of the individual routing subsystem is in progress: schema, routing UI/API scaffolding, routing user groups, CIDR validation, outbox/revision workers, Redis service, agent documentation, and rollback notes are present; the existing VPN data plane is not changed by this phase.
+- routing groups are mutually exclusive per user. When a user belongs to a routing group, group link permissions and limits apply, and individual route-list creation is blocked in the user panel.
+
+Current release target on 2026-07-20:
+
+- version tag: `v0.2.0`;
+- local and server-side tracked files were checked before publication so real `.env` files, `local/`, private keys, database dumps, SSH credentials, and generated VPN configs stay out of Git;
+- routing revision delivery state was reconciled after manual live deployment so the panel shows only applied/superseded revisions and no stale pending delivery jobs;
+- the Vienna egress route set was verified against the full configured CIDR list: 1133 expected CIDRs, 1133 live WireGuard `AllowedIPs`, and 1133 live kernel routes;
+- a routed test client path from the VPN client subnet successfully reached `www.youtube.com` over HTTPS through the Vienna egress path.
 
 ## Major Changes
 
@@ -120,3 +133,4 @@ Current application changes tested on 2026-07-10:
 - Fixed install/client-generation issues found during test deployment.
 - Added raw WireGuard-style QR Code and text connection blocks to client pages.
 - Documented that this project is based on `infosave2007/amneziavpnphp` and added attribution/thanks.
+- Added per-user server access controls for regular users, including optional self-service config creation and automatic client blocking when server access is removed.

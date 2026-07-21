@@ -1,4 +1,4 @@
--- Complete AWG2 support with original Amnezia parameters, including I1-I5.
+-- Complete AWG2 support with original Amnezia parameters, including I1.
 
 UPDATE protocols
 SET output_template = '[Interface]
@@ -17,10 +17,6 @@ H2 = {{H2}}
 H3 = {{H3}}
 H4 = {{H4}}
 I1 = {{I1}}
-I2 = {{I2}}
-I3 = {{I3}}
-I4 = {{I4}}
-I5 = {{I5}}
 
 [Peer]
 PublicKey = {{server_public_key}}
@@ -100,7 +96,7 @@ if [ -f /opt/amnezia/awg2/awg0.conf ]; then
 
   for P in Jc Jmin Jmax S1 S2 S3 S4 H1 H2 H3 H4 I1 I2 I3 I4 I5; do
     VAL=$(sed -n -E "s/^[[:space:]]*$P[[:space:]]*=[[:space:]]*//p" /opt/amnezia/awg2/awg0.conf | head -1 | tr -d "\\r")
-    if [ -n "$VAL" ] || [[ "$P" =~ ^I[2-5]$ ]]; then echo "Variable: $P=$VAL"; fi
+    if [ -n "$VAL" ]; then echo "Variable: $P=$VAL"; fi
   done
   echo "Variable: dns_servers=1.1.1.1, 1.0.0.1"
   exit 0
@@ -122,10 +118,6 @@ H2_VAL="1984025557-2135018048"
 H3_VAL="2145217268-2146643749"
 H4_VAL="2146790761-2146860793"
 I1_VAL="<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>"
-I2_VAL=""
-I3_VAL=""
-I4_VAL=""
-I5_VAL=""
 
 {
 echo "[Interface]"
@@ -223,5 +215,5 @@ WHERE p.slug = 'awg2'
 -- Problem: H1-H4 parameters were stored with single values instead of "value1-value2" format
 -- This was causing QR codes to be detected as "legacy" instead of proper AmneziaWG 2.0 format
 UPDATE vpn_servers
-SET awg_params = '{"JC":5,"JMIN":10,"JMAX":50,"S1":51,"S2":125,"S3":13,"S4":9,"H1":"1443912531-1981073285","H2":"1984025557-2135018048","H3":"2145217268-2146643749","H4":"2146790761-2146860793","I1":"<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>","I2":"","I3":"","I4":"","I5":""}'
+SET awg_params = '{"JC":5,"JMIN":10,"JMAX":50,"S1":51,"S2":125,"S3":13,"S4":9,"H1":"1443912531-1981073285","H2":"1984025557-2135018048","H3":"2145217268-2146643749","H4":"2146790761-2146860793","I1":"<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>"}'
 WHERE install_protocol = 'awg2';

@@ -7,13 +7,17 @@
     <div class="max-w-md w-full space-y-8">
         <div>
             <div class="flex justify-center">
-                <i class="fas fa-shield-alt text-white text-6xl"></i>
+                {% if branding.logo_url %}
+                <img src="{{ branding.logo_url }}" alt="{{ app_name }}" class="h-20 w-20 object-contain">
+                {% else %}
+                <i class="{{ branding.logo_icon|default('fas fa-shield-alt') }} text-white text-6xl"></i>
+                {% endif %}
             </div>
             <h2 class="mt-6 text-center text-3xl font-extrabold text-white">
                 {{ app_name }}
             </h2>
             <p class="mt-2 text-center text-sm text-gray-100">
-                Sign in to manage your VPN servers
+                {{ branding.login_subtitle|default('Sign in to manage your VPN servers') }}
             </p>
         </div>
         

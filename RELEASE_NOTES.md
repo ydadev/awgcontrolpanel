@@ -1,3 +1,29 @@
+# awgcontrolpanel v0.2.0
+
+**Release Date:** 2026-07-20
+
+This release records the first tested customized control-panel build after the upstream import.
+
+## Highlights
+
+- Added administrator-controlled server access for regular users.
+- Reworked VPN client records as user-owned connection records.
+- Added WireGuard-compatible text/QR outputs for standard WireGuard and AmneziaWG-style connections.
+- Fixed true AmneziaWG 2.0 obfuscation config generation.
+- Added phase 1 routing control data model, admin/user UI, routing groups, revision tracking, and worker/scheduler services.
+- Fixed routing revision idempotency so scheduled reconciles do not create endless pending revisions when the current config is already applied.
+
+## Validation
+
+- Installed and tested the panel on an Ubuntu 24.04 VM.
+- Installed and tested a VPN node on a separate Ubuntu VM.
+- Verified the Vienna routing CIDR set against the live WireGuard peer and route table.
+- Verified routed client HTTPS access to YouTube through the Vienna egress path.
+- Ran PHP syntax checks for changed routing worker/config builder files.
+- Checked tracked repository files for local secrets before publication.
+
+---
+
 # Release Notes - Amnezia VPN Web Panel v2.0.1
 
 **Release Date:** 2026-04-25

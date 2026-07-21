@@ -56,6 +56,7 @@ build/
 scripts/_cycle_out/
 
 # Local exported client configs and generated VPN artifacts.
+public/uploads/branding/
 oleg*.conf
 adminnew*.conf
 ________*.conf

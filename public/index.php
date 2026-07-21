@@ -18,10 +18,12 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../inc/Config.php';
 require_once __DIR__ . '/../inc/DB.php';
 require_once __DIR__ . '/../inc/Auth.php';
+require_once __DIR__ . '/../inc/Branding.php';
 require_once __DIR__ . '/../inc/Router.php';
 require_once __DIR__ . '/../inc/View.php';
 require_once __DIR__ . '/../inc/VpnServer.php';
 require_once __DIR__ . '/../inc/VpnClient.php';
+require_once __DIR__ . '/../inc/UserServerAccess.php';
 require_once __DIR__ . '/../inc/Translator.php';
 require_once __DIR__ . '/../inc/JWT.php';
 require_once __DIR__ . '/../inc/PanelImporter.php';
@@ -30,6 +32,18 @@ require_once __DIR__ . '/../inc/BackupLibrary.php';
 require_once __DIR__ . '/../inc/InstallProtocolManager.php';
 require_once __DIR__ . '/../inc/ProtocolService.php';
 require_once __DIR__ . '/../inc/OpenRouterService.php';
+require_once __DIR__ . '/../inc/Routing/RoutingValidator.php';
+require_once __DIR__ . '/../inc/Routing/RoutingAuditService.php';
+require_once __DIR__ . '/../inc/Routing/RoutingGroupRepository.php';
+require_once __DIR__ . '/../inc/Routing/RoutingPermissionService.php';
+require_once __DIR__ . '/../inc/Routing/RoutingRepository.php';
+require_once __DIR__ . '/../inc/Routing/RoutingCompiler.php';
+require_once __DIR__ . '/../inc/Routing/RoutingConfigBuilder.php';
+require_once __DIR__ . '/../inc/Routing/RoutingDeliveryService.php';
+require_once __DIR__ . '/../inc/Routing/RoutingAgentClient.php';
+require_once __DIR__ . '/../inc/Routing/IpPoolManager.php';
+require_once __DIR__ . '/../inc/Routing/ServerLinkManager.php';
+require_once __DIR__ . '/../inc/Routing/RoutingPolicyResolver.php';
 
 // Load environment configuration
 Config::load(__DIR__ . '/../.env');
@@ -58,7 +72,8 @@ InstallProtocolManager::ensureDefaults();
 
 // Initialize template engine
 $user = Auth::user();
-$appName = Config::get('APP_NAME', 'Amnezia VPN Panel');
+$branding = Branding::get(Config::get('APP_NAME', 'AWG Control Panel'));
+$appName = $branding['app_name'];
 
 /**
  * Helper function to authenticate user from JWT or session
@@ -86,10 +101,12 @@ function authenticateRequest(): ?array
 
 View::init(__DIR__ . '/../templates', [
     'app_name' => $appName,
+    'branding' => $branding,
     'user' => $user,
     'current_language' => Translator::getCurrentLanguage(),
     'languages' => Translator::getSupportedLanguages(),
     'current_uri' => $_SERVER['REQUEST_URI'] ?? '/dashboard',
+    'current_year' => date('Y'),
     't' => function ($key, $params = []) {
         return Translator::t($key, $params);
     }
@@ -119,6 +136,112 @@ function requireAdmin(): void
         echo 'Forbidden: Admin access required';
         exit;
     }
+}
+
+function userCanViewServer(array $user, int $serverId): bool
+{
+    return ($user['role'] ?? '') === 'admin' || UserServerAccess::canViewServer((int) $user['id'], $serverId);
+}
+
+function userCanCreateClients(array $user, int $serverId): bool
+{
+    return ($user['role'] ?? '') === 'admin' || UserServerAccess::canCreateClients((int) $user['id'], $serverId);
+}
+
+function listConnectionOwnerOptions(int $serverId, array $currentUser): array
+{
+    if (($currentUser['role'] ?? '') !== 'admin') {
+        return [[
+            'id' => (int) $currentUser['id'],
+            'email' => $currentUser['email'] ?? '',
+            'name' => $currentUser['name'] ?? ($currentUser['email'] ?? ''),
+            'role' => $currentUser['role'] ?? 'user',
+            'has_server_access' => 1,
+        ]];
+    }
+
+    $pdo = DB::conn();
+    $stmt = $pdo->prepare('
+        SELECT
+            u.id,
+            u.email,
+            u.name,
+            u.role,
+            u.status,
+            CASE
+                WHEN u.role = \'admin\' THEN 1
+                WHEN usa.can_view = 1 THEN 1
+                ELSE 0
+            END AS has_server_access
+        FROM users u
+        LEFT JOIN user_server_access usa
+            ON usa.user_id = u.id
+            AND usa.server_id = ?
+            AND usa.can_view = 1
+        WHERE u.status = \'active\'
+        ORDER BY CASE WHEN u.role = \'admin\' THEN 0 ELSE 1 END, u.email ASC
+    ');
+    $stmt->execute([$serverId]);
+    return $stmt->fetchAll();
+}
+
+function resolveConnectionOwnerForCreateById(array $currentUser, int $serverId, int $targetUserId): array
+{
+    if (($currentUser['role'] ?? '') !== 'admin') {
+        return $currentUser;
+    }
+
+    if ($targetUserId <= 0) {
+        throw new Exception('Select a user for this connection');
+    }
+
+    $pdo = DB::conn();
+    $stmt = $pdo->prepare('
+        SELECT
+            u.*,
+            CASE
+                WHEN u.role = \'admin\' THEN 1
+                WHEN usa.can_view = 1 THEN 1
+                ELSE 0
+            END AS has_server_access
+        FROM users u
+        LEFT JOIN user_server_access usa
+            ON usa.user_id = u.id
+            AND usa.server_id = ?
+            AND usa.can_view = 1
+        WHERE u.id = ? AND u.status = \'active\'
+        LIMIT 1
+    ');
+    $stmt->execute([$serverId, $targetUserId]);
+    $owner = $stmt->fetch();
+
+    if (!$owner) {
+        throw new Exception('Selected user was not found or is inactive');
+    }
+
+    if (($owner['role'] ?? '') !== 'admin' && (int) ($owner['has_server_access'] ?? 0) !== 1) {
+        throw new Exception('Selected user does not have access to this server');
+    }
+
+    return $owner;
+}
+
+function resolveConnectionOwnerForCreate(array $currentUser, int $serverId): array
+{
+    return resolveConnectionOwnerForCreateById($currentUser, $serverId, (int) ($_POST['user_id'] ?? 0));
+}
+
+function userCanAccessClient(array $user, array $clientData): bool
+{
+    if (($user['role'] ?? '') === 'admin') {
+        return true;
+    }
+
+    if ((int) ($clientData['user_id'] ?? 0) !== (int) ($user['id'] ?? 0)) {
+        return false;
+    }
+
+    return UserServerAccess::canViewServer((int) $user['id'], (int) ($clientData['server_id'] ?? 0));
 }
 
 function debugRoutesEnabled(): bool
@@ -260,7 +383,9 @@ Router::get('/dashboard', function () {
     $user = Auth::user();
 
     // Get user's servers
-    $servers = VpnServer::listByUser($user['id']);
+    $servers = (($user['role'] ?? '') === 'admin')
+        ? VpnServer::listAll()
+        : VpnServer::listByUser($user['id']);
 
     // Get user's clients
     $clients = VpnClient::listByUser($user['id']);
@@ -271,8 +396,8 @@ Router::get('/dashboard', function () {
     // Also count clients with recent handshake (within 5 minutes) for WireGuard/AWG
     $pdo = DB::conn();
     $stmt = $pdo->query("
-        SELECT COUNT(*) as cnt FROM vpn_clients
-        WHERE last_handshake IS NOT NULL
+        SELECT COUNT(*) as cnt FROM vpn_clients 
+        WHERE last_handshake IS NOT NULL 
         AND last_handshake > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
         AND status = 'active'
     ");
@@ -308,7 +433,7 @@ Router::get('/servers', function () {
 
 // Create server page
 Router::get('/servers/create', function () {
-    requireAuth();
+    requireAdmin();
     $protocols = InstallProtocolManager::listActive();
     $defaultProtocol = !empty($protocols) ? ($protocols[0]['slug'] ?? InstallProtocolManager::getDefaultSlug()) : InstallProtocolManager::getDefaultSlug();
     View::render('servers/create.twig', [
@@ -321,7 +446,7 @@ Router::get('/servers/create', function () {
 
 // Create server action
 Router::post('/servers/create', function () {
-    requireAuth();
+    requireAdmin();
     $user = Auth::user();
     $creationMode = $_POST['creation_mode'] ?? 'manual';
     $formData = $_POST;
@@ -515,20 +640,13 @@ Router::post('/servers/create', function () {
 
 // Delete server action
 Router::post('/servers/{id}/delete', function ($params) {
-    requireAuth();
+    requireAdmin();
     $user = Auth::user();
     $serverId = (int) $params['id'];
 
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-
-        // Check ownership or admin
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo 'Forbidden';
-            return;
-        }
 
         $server->delete();
         $_SESSION['success_message'] = 'Server deleted successfully';
@@ -541,20 +659,12 @@ Router::post('/servers/{id}/delete', function ($params) {
 
 // Deploy server page
 Router::get('/servers/{id}/deploy', function ($params) {
-    requireAuth();
+    requireAdmin();
     $serverId = (int) $params['id'];
 
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-
-        // Check ownership
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo 'Forbidden';
-            return;
-        }
 
         View::render('servers/deploy.twig', ['server' => $serverData]);
     } catch (Exception $e) {
@@ -565,7 +675,7 @@ Router::get('/servers/{id}/deploy', function ($params) {
 
 // Deploy server action (AJAX)
 Router::post('/servers/{id}/deploy', function ($params) {
-    requireAuth();
+    requireAdmin();
     header('Content-Type: application/json');
 
     $serverId = (int) $params['id'];
@@ -588,14 +698,6 @@ Router::post('/servers/{id}/deploy', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo json_encode(['error' => 'Forbidden']);
-            return;
-        }
-
         $result = $server->deploy($options);
         if (!isset($result['success']) && empty($result['requires_action'])) {
             $result['success'] = true;
@@ -609,18 +711,12 @@ Router::post('/servers/{id}/deploy', function ($params) {
 
 // Uninstall all protocols from server (mass cleanup) - MUST be before {slug}/uninstall
 Router::post('/servers/{id}/protocols/uninstall-all', function ($params) {
-    requireAuth();
+    requireAdmin();
     header('Content-Type: application/json');
     $serverId = (int) $params['id'];
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo json_encode(['success' => false, 'error' => 'Forbidden']);
-            return;
-        }
         $pdo = DB::conn();
         $stmt = $pdo->prepare('SELECT p.* FROM server_protocols sp JOIN protocols p ON p.id = sp.protocol_id WHERE sp.server_id = ?');
         $stmt->execute([$serverId]);
@@ -648,7 +744,7 @@ Router::post('/servers/{id}/protocols/uninstall-all', function ($params) {
 
 // Uninstall a specific protocol on server (AJAX)
 Router::post('/servers/{id}/protocols/{slug}/uninstall', function ($params) {
-    requireAuth();
+    requireAdmin();
     header('Content-Type: application/json');
 
     $serverId = (int) $params['id'];
@@ -657,14 +753,6 @@ Router::post('/servers/{id}/protocols/{slug}/uninstall', function ($params) {
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-
-        // Check ownership
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo json_encode(['error' => 'Forbidden']);
-            return;
-        }
 
         $protocol = InstallProtocolManager::getBySlug($slug);
         if (!$protocol) {
@@ -713,7 +801,7 @@ Router::post('/servers/{id}/protocols/{slug}/uninstall', function ($params) {
 
 // Activate protocol on server (AJAX)
 Router::post('/servers/{id}/protocols/activate', function ($params) {
-    requireAuth();
+    requireAdmin();
 
     // Suppress errors and clean output buffer to prevent HTML corruption of JSON
     @ini_set('display_errors', '0');
@@ -737,14 +825,6 @@ Router::post('/servers/{id}/protocols/activate', function ($params) {
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo json_encode(['error' => 'Forbidden']);
-            Logger::appendInstall($serverId, 'HTTP activate forbidden user=' . ($user['id'] ?? 0));
-            return;
-        }
-
         $protocol = InstallProtocolManager::getById($protocolId);
         if (!$protocol) {
             http_response_code(404);
@@ -753,7 +833,7 @@ Router::post('/servers/{id}/protocols/activate', function ($params) {
             return;
         }
 
-        $result = InstallProtocolManager::activate($server, $protocol, $installOptions);
+        $result = InstallProtocolManager::activate($server, $protocol, []);
         echo json_encode($result);
         Logger::appendInstall($serverId, 'HTTP activate finished ok');
     } catch (Exception $e) {
@@ -772,7 +852,7 @@ Router::get('/servers/{id}/warp/status', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
         $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -800,12 +880,6 @@ Router::post('/servers/{id}/warp/action', function ($params) {
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo json_encode(['error' => 'Forbidden']);
-            return;
-        }
         switch ($action) {
             case 'connect':
                 $server->executeCommand('warp-cli --accept-tos connect 2>/dev/null', true);
@@ -837,13 +911,14 @@ Router::get('/servers/{id}', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
         }
+        $canManageServer = Auth::isAdmin();
+        $canCreateClients = userCanCreateClients($user, $serverId);
 
         $pdo = DB::conn();
         $serverProtocols = [];
@@ -880,9 +955,13 @@ Router::get('/servers/{id}', function ($params) {
 
         $selectedProtocolId = isset($_GET['protocol_id']) ? (int) $_GET['protocol_id'] : 0;
         if ($selectedProtocolId > 0) {
-            $clients = VpnClient::listByServerAndProtocol($serverId, $selectedProtocolId);
+            $clients = $canManageServer
+                ? VpnClient::listByServerAndProtocol($serverId, $selectedProtocolId)
+                : VpnClient::listByServerAndProtocolForUser($serverId, $selectedProtocolId, (int) $user['id']);
         } else {
-            $clients = VpnClient::listByServer($serverId);
+            $clients = $canManageServer
+                ? VpnClient::listByServer($serverId)
+                : VpnClient::listByServerForUser($serverId, (int) $user['id']);
         }
 
         // Flash message from manual config import
@@ -924,21 +1003,30 @@ Router::get('/servers/{id}', function ($params) {
                 }
 
                 // Refresh clients list after import
-                $clients = VpnClient::listByServer($serverId);
+                $clients = $canManageServer
+                    ? VpnClient::listByServer($serverId)
+                    : VpnClient::listByServerForUser($serverId, (int) $user['id']);
             }
         }
 
+        $pageError = isset($_GET['error']) ? trim((string) $_GET['error']) : '';
+
         // Get online clients for this server (Xray)
         $onlineLogins = ServerMonitoring::getOnlineClientsForServer($serverData);
+        $connectionUsers = $canCreateClients ? listConnectionOwnerOptions($serverId, $user) : [];
 
         View::render('servers/view.twig', [
             'server' => $serverData,
             'clients' => $clients,
+            'error' => $pageError !== '' ? $pageError : null,
             'import_message' => $importMessage,
             'server_protocols' => $serverProtocols,
             'selected_protocol_id' => $selectedProtocolId,
             'available_protocols' => $availableProtocols,
             'online_logins' => $onlineLogins,
+            'can_manage_server' => $canManageServer,
+            'can_create_clients' => $canCreateClients,
+            'connection_users' => $connectionUsers,
         ]);
     } catch (Exception $e) {
         error_log('Server view error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
@@ -958,16 +1046,17 @@ Router::get('/servers/{id}/monitoring', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
         }
 
         // Get clients for this server
-        $clients = VpnClient::listByServer($serverId);
+        $clients = Auth::isAdmin()
+            ? VpnClient::listByServer($serverId)
+            : VpnClient::listByServerForUser($serverId, (int) $user['id']);
 
         View::render('servers/monitoring.twig', [
             'server' => $serverData,
@@ -981,7 +1070,7 @@ Router::get('/servers/{id}/monitoring', function ($params) {
 
 // Import server configuration from uploaded backup
 Router::post('/servers/{id}/config/import', function ($params) {
-    requireAuth();
+    requireAdmin();
     $user = Auth::user();
     $serverId = (int) $params['id'];
 
@@ -993,7 +1082,7 @@ Router::post('/servers/{id}/config/import', function ($params) {
             throw new Exception('Server not found');
         }
 
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!Auth::isAdmin()) {
             throw new Exception('Недостаточно прав для импорта конфигурации');
         }
 
@@ -1087,20 +1176,12 @@ Router::post('/servers/{id}/config/import', function ($params) {
 
 // Delete server
 Router::post('/servers/{id}/delete', function ($params) {
-    requireAuth();
+    requireAdmin();
     $serverId = (int) $params['id'];
 
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-
-        // Check ownership
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
-            http_response_code(403);
-            echo 'Forbidden';
-            return;
-        }
 
         $server->delete();
         redirect('/servers');
@@ -1145,13 +1226,14 @@ Router::post('/servers/{id}/clients/create', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanCreateClients($user, $serverId)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
         }
+
+        $connectionOwner = resolveConnectionOwnerForCreate($user, $serverId);
 
         $protocolId = isset($_POST['protocol_id']) && $_POST['protocol_id'] !== '' ? (int) $_POST['protocol_id'] : null;
         if ($protocolId) {
@@ -1166,7 +1248,7 @@ Router::post('/servers/{id}/clients/create', function ($params) {
                 $protocolId = null;
             }
         }
-        $clientId = VpnClient::create($serverId, $user['id'], $clientName, $expiresInDays, $protocolId, $username, $login);
+        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $clientName, $expiresInDays, $protocolId, $username, $login);
 
         // Set traffic limit if specified
         if ($trafficLimitBytes !== null && $trafficLimitBytes > 0) {
@@ -1189,12 +1271,23 @@ Router::get('/clients/{id}', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
+        }
+        try {
+            $ownerStmt = DB::conn()->prepare('SELECT email, name, role FROM users WHERE id = ? LIMIT 1');
+            $ownerStmt->execute([(int) ($clientData['user_id'] ?? 0)]);
+            $owner = $ownerStmt->fetch();
+            if ($owner) {
+                $clientData['owner_email'] = $owner['email'] ?? '';
+                $clientData['owner_name'] = $owner['name'] ?? '';
+                $clientData['owner_role'] = $owner['role'] ?? '';
+            }
+        } catch (Exception $e) {
+            // Owner display is optional; keep the connection page usable if lookup fails.
         }
         $server = new VpnServer((int) $clientData['server_id']);
         $serverData = $server->getData();
@@ -1237,12 +1330,12 @@ Router::get('/clients/{id}', function ($params) {
                     $protocolOutput = $clientData['config'] ?? '';
                 }
             }
-
+            
             // Generate second QR code and vpn:// config for AWG2
             if ($isAwg2 && !empty($clientData['config'])) {
                 try {
                     $qrCodeVpnUrl = VpnClient::generateQRCodeVpnUrl($clientData['config'], 'awg2');
-
+                    
                     // Generate vpn:// URL string using vpn:// format (JSON + zlib)
                     require_once __DIR__ . '/../inc/QrUtil.php';
                     $vpnUrlConfig = 'vpn://' . QrUtil::encodeVpnUrlConf($clientData['config'], 'awg2');
@@ -1302,9 +1395,8 @@ Router::get('/clients/{id}/download', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -1598,9 +1690,8 @@ Router::post('/clients/{id}/revoke', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -1625,9 +1716,8 @@ Router::post('/clients/{id}/restore', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -1652,9 +1742,8 @@ Router::post('/clients/{id}/delete', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -1683,9 +1772,8 @@ Router::post('/clients/{id}/sync-stats', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -1720,7 +1808,7 @@ Router::post('/clients/{id}/set-expiration', function ($params) {
         $clientData = $client->getData();
 
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['success' => false, 'error' => 'Forbidden']);
             return;
@@ -1749,7 +1837,7 @@ Router::post('/clients/{id}/set-traffic-limit', function ($params) {
         $clientData = $client->getData();
 
         $user = Auth::user();
-        if ($clientData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['success' => false, 'error' => 'Forbidden']);
             return;
@@ -1775,9 +1863,8 @@ Router::post('/servers/{id}/sync-stats', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
         $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if (!Auth::isAdmin()) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -1902,7 +1989,9 @@ Router::get('/api/servers', function () {
     if (!$user)
         return;
 
-    $servers = VpnServer::listByUser($user['id']);
+    $servers = (($user['role'] ?? '') === 'admin')
+        ? VpnServer::listAll()
+        : VpnServer::listByUser($user['id']);
 
     // Enrich with installed protocols
     $pdo = DB::conn();
@@ -1923,6 +2012,12 @@ Router::post('/api/servers/create', function () {
     $user = JWT::requireAuth();
     if (!$user)
         return;
+
+    if (($user['role'] ?? '') !== 'admin') {
+        http_response_code(403);
+        echo json_encode(['error' => 'Forbidden']);
+        return;
+    }
 
     $input = json_decode(file_get_contents('php://input'), true);
 
@@ -1976,8 +2071,7 @@ Router::delete('/api/servers/{id}/delete', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership or admin
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2013,7 +2107,7 @@ Router::post('/api/servers/{id}/import', function ($params) {
         echo json_encode(['error' => 'Server not found']);
         return;
     }
-    if ($serverData['user_id'] != $user['id']) {
+    if (($user['role'] ?? '') !== 'admin') {
         http_response_code(403);
         echo json_encode(['error' => 'Forbidden']);
         return;
@@ -2077,7 +2171,7 @@ Router::get('/api/servers/{id}/imports', function ($params) {
         echo json_encode(['error' => 'Server not found']);
         return;
     }
-    if ($serverData['user_id'] != $user['id']) {
+    if (($user['role'] ?? '') !== 'admin') {
         http_response_code(403);
         echo json_encode(['error' => 'Forbidden']);
         return;
@@ -2105,8 +2199,7 @@ Router::post('/api/servers/{id}/backup', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership or admin
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2139,8 +2232,7 @@ Router::get('/api/servers/{id}/backups', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership or admin
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2183,8 +2275,7 @@ Router::post('/api/servers/{id}/restore', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership or admin
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2227,8 +2318,7 @@ Router::delete('/api/backups/{id}', function ($params) {
         $server = new VpnServer($backup['server_id']);
         $serverData = $server->getData();
 
-        // Check ownership or admin
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2272,8 +2362,7 @@ Router::get('/api/clients/{id}/details', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id']) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2324,8 +2413,7 @@ Router::get('/api/clients/{id}/qr', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id']) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2356,8 +2444,7 @@ Router::post('/api/clients/{id}/revoke', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id']) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2389,8 +2476,7 @@ Router::post('/api/clients/{id}/restore', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id']) {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2422,8 +2508,7 @@ Router::delete('/api/clients/{id}/delete', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id'] && ($user['role'] ?? '') !== 'admin') {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2471,8 +2556,7 @@ Router::get('/api/servers/{id}/metrics', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2517,12 +2601,7 @@ Router::get('/api/clients/{id}/metrics', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Get server to check ownership
-        $server = new VpnServer($clientData['server_id']);
-        $serverData = $server->getData();
-
-        // Check ownership
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2554,17 +2633,19 @@ Router::get('/api/servers/{id}/clients', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
         }
 
-        // Sync all stats first
-        VpnClient::syncAllStatsForServer($serverId);
+        if (($user['role'] ?? '') === 'admin') {
+            VpnClient::syncAllStatsForServer($serverId);
+        }
 
-        $clients = VpnClient::listByServer($serverId);
+        $clients = (($user['role'] ?? '') === 'admin')
+            ? VpnClient::listByServer($serverId)
+            : VpnClient::listByServerForUser($serverId, (int) $user['id']);
         $clientsData = [];
 
         foreach ($clients as $clientData) {
@@ -2608,8 +2689,7 @@ Router::get('/api/servers/{id}/online', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        // Check ownership
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2639,7 +2719,7 @@ Router::get('/api/servers/{id}/protocols', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanViewServer($user, $serverId)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2727,7 +2807,7 @@ Router::post('/api/servers/{id}/protocols/install', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3320,7 +3400,7 @@ Router::post('/api/servers/{id}/protocols/uninstall-all', function ($params) {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3395,7 +3475,7 @@ Router::post('/api/servers/{id}/protocols/{slug}/uninstall', function ($params) 
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
 
-        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3465,11 +3545,13 @@ Router::post('/api/clients/create', function () {
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
-        if (($serverData['user_id'] ?? null) != $user['id'] && ($user['role'] ?? '') !== 'admin') {
+        if (!userCanCreateClients($user, $serverId)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
         }
+        $targetUserId = (int) ($data['user_id'] ?? $user['id']);
+        $connectionOwner = resolveConnectionOwnerForCreateById($user, $serverId, $targetUserId);
 
         // Validate protocol_id is installed on server (if provided)
         if ($protocolId !== null && $protocolId > 0) {
@@ -3485,7 +3567,7 @@ Router::post('/api/clients/create', function () {
             $protocolId = null;
         }
 
-        $clientId = VpnClient::create($serverId, (int) $user['id'], $name, $expiresInDays, $protocolId, $username, $login);
+        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $name, $expiresInDays, $protocolId, $username, $login);
 
         $client = new VpnClient($clientId);
 
@@ -3593,8 +3675,7 @@ Router::post('/api/clients/{id}/set-expiration', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3636,8 +3717,7 @@ Router::post('/api/clients/{id}/extend', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3716,8 +3796,7 @@ Router::post('/api/clients/{id}/set-traffic-limit', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3750,8 +3829,7 @@ Router::get('/api/clients/{id}/traffic-limit-status', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        // Check ownership
-        if ($clientData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+        if (!userCanAccessClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -3983,6 +4061,15 @@ Router::post('/settings/change-password', function () {
     $controller->changePassword();
 });
 
+// Admin password reset for another user
+Router::post('/settings/users/{id}/password', function ($params) {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->changeUserPassword($params['id']);
+});
+
 // Update profile
 Router::post('/settings/profile', function () {
     requireAuth();
@@ -4008,6 +4095,24 @@ Router::post('/settings/delete-user/{id}', function ($params) {
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
     $controller->deleteUser($params['id']);
+});
+
+// Update regular user's server access
+Router::post('/settings/users/{id}/server-access', function ($params) {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->saveUserServerAccess($params['id']);
+});
+
+// Save UI branding
+Router::post('/settings/branding', function () {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->saveBranding();
 });
 
 // LDAP settings page
@@ -4192,6 +4297,80 @@ Router::post('/admin/scenario/import', function () {
 });
 
 // ===== Logs Management Routes (Admin Only) =====
+
+// ===== Routing Management Routes =====
+
+Router::get('/routing', function () {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->index();
+});
+
+Router::post('/routing/ingresses', function () {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->saveIngress();
+});
+
+Router::post('/routing/links', function () {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->createLink();
+});
+
+Router::post('/routing/ip-lists', function () {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->createIpList();
+});
+
+Router::post('/routing/groups', function () {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->createGroup();
+});
+
+Router::post('/routing/groups/{group_id}/members', function ($params) {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->saveGroupMembers((int) $params['group_id']);
+});
+
+Router::post('/routing/groups/{group_id}/permissions', function ($params) {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->saveGroupPermission((int) $params['group_id']);
+});
+
+Router::post('/routing/servers/{server_id}/revision', function ($params) {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    $controller = new AdminRoutingController();
+    $controller->createRevision((int) $params['server_id']);
+});
+
+Router::get('/my/routes', function () {
+    require_once __DIR__ . '/../controllers/UserRoutingController.php';
+    $controller = new UserRoutingController();
+    $controller->index();
+});
+
+Router::post('/my/routes/ip-lists', function () {
+    require_once __DIR__ . '/../controllers/UserRoutingController.php';
+    $controller = new UserRoutingController();
+    $controller->createIpList();
+});
+
+Router::get('/api/routing/status', function () {
+    require_once __DIR__ . '/../controllers/RoutingApiController.php';
+    $controller = new RoutingApiController();
+    $controller->status();
+});
+
+Router::post('/api/routing/servers/{server_id}/revision', function ($params) {
+    require_once __DIR__ . '/../controllers/RoutingApiController.php';
+    $controller = new RoutingApiController();
+    $controller->buildRevision($params);
+});
 
 // List and view logs
 Router::get('/admin/logs', function () {

@@ -1,4 +1,7 @@
 <?php
+
+require_once __DIR__ . '/UserServerAccess.php';
+
 /**
  * VPN Server Management Class
  * Handles deployment and management of Amnezia VPN servers
@@ -348,8 +351,10 @@ class VpnServer
             // Create directories
             $this->executeCommand('mkdir -p /opt/amnezia/amnezia-awg', true);
 
-            // Find free UDP port
-            $vpnPort = $this->findFreeUdpPort();
+            // Use the requested port when the deploy flow provides one; otherwise pick a free UDP port.
+            $vpnPort = isset($options['server_port']) && (int) $options['server_port'] > 0
+                ? (int) $options['server_port']
+                : $this->findFreeUdpPort();
 
             // Create Dockerfile
             $this->createDockerfile();
@@ -838,12 +843,12 @@ BASH;
         $vpnSubnet = (string) ($this->data['vpn_subnet'] ?? '10.8.1.0/24');
         $vpnSubnetEsc = escapeshellarg($vpnSubnet);
         $hostNatCmd = "bash -lc 'IFACE=\\$(ip route | awk \"{if (\\$1==\\\"default\\\") {print \\$5; exit}}\"); " .
-            "iptables -t nat -C POSTROUTING -s " . $vpnSubnetEsc . " -o \\\"\\$IFACE\\\" -j MASQUERADE 2>/dev/null || " .
-            "iptables -t nat -I POSTROUTING 1 -s " . $vpnSubnetEsc . " -o \\\"\\$IFACE\\\" -j MASQUERADE; " .
-            "iptables -C FORWARD -s " . $vpnSubnetEsc . " -o \\\"\\$IFACE\\\" -j ACCEPT 2>/dev/null || " .
-            "iptables -I FORWARD 1 -s " . $vpnSubnetEsc . " -o \\\"\\$IFACE\\\" -j ACCEPT; " .
-            "iptables -C FORWARD -d " . $vpnSubnetEsc . " -m conntrack --ctstate RELATED,ESTABLISHED -i \\\"\\$IFACE\\\" -j ACCEPT 2>/dev/null || " .
-            "iptables -I FORWARD 1 -d " . $vpnSubnetEsc . " -m conntrack --ctstate RELATED,ESTABLISHED -i \\\"\\$IFACE\\\" -j ACCEPT; " .
+            "iptables -t nat -C POSTROUTING -s " . $vpnSubnetEsc . " -o \$IFACE -j MASQUERADE 2>/dev/null || " .
+            "iptables -t nat -I POSTROUTING 1 -s " . $vpnSubnetEsc . " -o \$IFACE -j MASQUERADE; " .
+            "iptables -C FORWARD -s " . $vpnSubnetEsc . " -o \$IFACE -j ACCEPT 2>/dev/null || " .
+            "iptables -I FORWARD 1 -s " . $vpnSubnetEsc . " -o \$IFACE -j ACCEPT; " .
+            "iptables -C FORWARD -d " . $vpnSubnetEsc . " -m conntrack --ctstate RELATED,ESTABLISHED -i \$IFACE -j ACCEPT 2>/dev/null || " .
+            "iptables -I FORWARD 1 -d " . $vpnSubnetEsc . " -m conntrack --ctstate RELATED,ESTABLISHED -i \$IFACE -j ACCEPT; " .
             "sysctl -w net.ipv4.ip_forward=1 >/dev/null'";
         $this->executeCommand($hostNatCmd, true);
 
@@ -869,10 +874,7 @@ BASH;
      */
     public static function listByUser(int $userId): array
     {
-        $pdo = DB::conn();
-        $stmt = $pdo->prepare('SELECT * FROM vpn_servers WHERE user_id = ? ORDER BY created_at DESC');
-        $stmt->execute([$userId]);
-        return $stmt->fetchAll();
+        return UserServerAccess::listServersForUser($userId);
     }
 
     /**

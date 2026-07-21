@@ -52,6 +52,13 @@
     {{ import_message.text }}
   </div>
   {% endif %}
+
+  {% if error %}
+  <div class="mb-6 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded">
+    <i class="fas fa-exclamation-circle mr-2"></i>
+    {{ error }}
+  </div>
+  {% endif %}
   
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
     <div class="bg-white rounded shadow p-6">
@@ -65,6 +72,7 @@
         
       </dl>
 
+      {% if can_manage_server %}
       <div class="mt-4 flex items-center gap-2">
         <button type="button" id="uninstallAllBtn" class="px-3 py-1 bg-gray-600 text-white rounded text-sm">Удалить все протоколы</button>
         <span id="uninstallMsg" class="ml-3 text-sm text-gray-600"></span>
@@ -147,7 +155,7 @@
                 </div>
 
                 <p class="text-[10px] text-gray-500 mt-2 leading-tight">
-                  ⚠️ WARP ~50-100 МБ RAM • Цепочка: Клиент → WG → WARP → CF → Интернет
+                  ⚠️ WARP ~50-100 МБ RAM • Цепочка: Подключение → WG → WARP → CF → Интернет
                 </p>
               </div>
               {% endif %}
@@ -158,6 +166,8 @@
         </div>
         <div id="uninstallSpMsg" class="mt-2 text-sm text-gray-600"></div>
       </div>
+
+      {% endif %}
 
       {% if server.status == 'active' %}
       <div class="metric-mini" id="serverMetrics">
@@ -188,14 +198,33 @@
       </div>
       {% endif %}
     </div>
+    {% if can_create_clients %}
     <div class="bg-white rounded shadow p-6">
-      <h3 class="font-bold mb-4">{{ t('clients.create') }}</h3>
+      <h3 class="font-bold mb-4">Создать подключение</h3>
       <form method="POST" action="/servers/{{ server.id }}/clients/create" class="space-y-3" id="createClientForm">
         <div>
-          <input name="name" placeholder="{{ t('clients.name') }}" required class="w-full px-3 py-2 border rounded" id="clientName">
+          <label class="block text-sm text-gray-600 mb-1">Владелец подключения</label>
+          {% if user.role == 'admin' %}
+          <select name="user_id" required class="w-full px-3 py-2 border rounded">
+            {% for account in connection_users %}
+              {% set can_select_account = account.role == 'admin' or account.has_server_access %}
+              <option value="{{ account.id }}" {% if account.id == user.id %}selected{% endif %} {% if not can_select_account %}disabled{% endif %}>
+                {{ account.name|default(account.email) }} &lt;{{ account.email }}&gt;{% if account.role == 'admin' %} - админ{% elseif not account.has_server_access %} - нет доступа к серверу{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="hidden" name="user_id" value="{{ user.id }}">
+          <div class="w-full px-3 py-2 border rounded bg-gray-50 text-gray-700">
+            {{ user.name|default(user.email) }} &lt;{{ user.email }}&gt;
+          </div>
+          {% endif %}
         </div>
         <div>
-          <input name="login" placeholder="Логин (уникально на сервере, пусто — из имени)" class="w-full px-3 py-2 border rounded" id="clientLogin">
+          <input name="name" placeholder="Название подключения" required class="w-full px-3 py-2 border rounded" id="clientName">
+        </div>
+        <div>
+          <input name="login" placeholder="VPN логин (уникально на сервере, пусто - из названия)" class="w-full px-3 py-2 border rounded" id="clientLogin">
         </div>
         <div>
           <label class="block text-sm text-gray-600 mb-1">{{ t('ai.protocol_type') }}</label>
@@ -237,13 +266,15 @@
           <input type="number" name="traffic_limit_mb" id="trafficMegabytes" class="w-full px-3 py-2 border rounded" placeholder="{{ t('clients.enter_megabytes') }}" style="display:none;" min="1">
         </div>
         <button type="submit" class="gradient-bg text-white px-4 py-2 rounded w-full" id="createClientBtn">
-          <span id="createClientText">{{ t('form.create') }}</span>
+          <span id="createClientText">Создать подключение</span>
           <i class="fas fa-spinner fa-spin" id="createClientSpinner" style="display:none;"></i>
         </button>
       </form>
     </div>
+    {% endif %}
   </div>
 
+  {% if can_manage_server %}
   <div class="bg-white rounded shadow p-6 mb-8">
     <h3 class="font-bold mb-4 flex items-center gap-2">
       <i class="fas fa-file-import text-purple-500"></i>
@@ -283,9 +314,10 @@
       </div>
     </div>
   </div>
+  {% endif %}
   <div class="bg-white rounded shadow">
     <div class="px-6 py-4 border-b flex justify-between items-center">
-      <h3 class="font-bold">{{ t('clients.title') }} ({{ clients|length }})</h3>
+      <h3 class="font-bold">Подключения ({{ clients|length }})</h3>
       <div class="flex items-center gap-3">
         <form method="GET" action="/servers/{{ server.id }}" class="flex items-center gap-2">
           <label class="text-sm text-gray-600">{{ t('ai.protocol_type') }}</label>
@@ -296,18 +328,21 @@
             {% endfor %}
           </select>
         </form>
+        {% if can_manage_server %}
         <button onclick="syncAllStats({{ server.id }})" class="text-purple-600 hover:text-purple-800 text-sm">
-          <i class="fas fa-sync-alt"></i> {{ t('clients.sync_stats') }}
+          <i class="fas fa-sync-alt"></i> Обновить статистику
         </button>
+        {% endif %}
       </div>
     </div>
     {% if clients|length > 0 %}
     <div class="w-full overflow-x-auto">
-    <table class="w-full" style="min-width: 1120px;">
+    <table class="w-full" style="min-width: 1240px;">
       <thead class="bg-gray-50">
         <tr>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.name') }}</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Логин</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Подключение</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Владелец</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">VPN логин</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('ai.protocol_type') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.ip') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.status') }}</th>
@@ -316,13 +351,17 @@
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.traffic_limit') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('common.speed') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.last_handshake') }}</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.actions') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Действия</th>
         </tr>
       </thead>
       <tbody>
         {% for client in clients %}
         <tr class="border-t">
           <td class="px-6 py-4">{{ client.name }}</td>
+          <td class="px-6 py-4">
+            <div class="font-medium">{{ client.owner_name|default(client.owner_email)|default('Unknown') }}</div>
+            <div class="text-xs text-gray-500">{{ client.owner_email|default('') }}</div>
+          </td>
           <td class="px-6 py-4">{{ client.name }}</td>
           <td class="px-6 py-4">
             {% if client.protocol_name %}
@@ -413,18 +452,18 @@
             {% endif %}
           </td>
           <td class="px-6 py-4">
-            <a href="/clients/{{ client.id }}" class="text-purple-600 hover:text-purple-800 mr-2">{{ t('servers.view') }}</a>
+            <a href="/clients/{{ client.id }}" class="text-purple-600 hover:text-purple-800 mr-2">Открыть</a>
             {% if client.status == 'active' %}
               <form method="POST" action="/clients/{{ client.id }}/revoke" style="display:inline;">
-                <button type="button" class="text-orange-600 hover:text-orange-800 mr-2" onclick="confirmAction(this, '{{ t('clients.revoke_confirm') }}')">{{ t('clients.revoke') }}</button>
+                <button type="button" class="text-orange-600 hover:text-orange-800 mr-2" onclick="confirmAction(this, 'Отключить это подключение?')">Отключить</button>
               </form>
             {% else %}
               <form method="POST" action="/clients/{{ client.id }}/restore" style="display:inline;">
-                <button type="submit" class="text-green-600 hover:text-green-800 mr-2">{{ t('clients.restore') }}</button>
+                <button type="submit" class="text-green-600 hover:text-green-800 mr-2">Включить</button>
               </form>
             {% endif %}
             <form method="POST" action="/clients/{{ client.id }}/delete" style="display:inline;">
-              <button type="button" class="text-red-600 hover:text-red-800" onclick="confirmAction(this, '{{ t('clients.delete_confirm') }}')">{{ t('clients.delete') }}</button>
+              <button type="button" class="text-red-600 hover:text-red-800" onclick="confirmAction(this, 'Удалить это подключение?')">Удалить</button>
             </form>
           </td>
         </tr>
@@ -433,7 +472,7 @@
     </table>
     </div>
     {% else %}
-    <div class="p-12 text-center text-gray-500">{{ t('clients.no_clients') }}</div>
+    <div class="p-12 text-center text-gray-500">Подключений пока нет</div>
     {% endif %}
   </div>
 </div>
@@ -543,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      const confirmed = await showConfirmModal('Удалить протокол и всех его клиентов?', 'Удаление протокола');
+      const confirmed = await showConfirmModal('Удалить протокол и все его подключения?', 'Удаление протокола');
       if (!confirmed) return;
       const slug = btn.getAttribute('data-slug');
       const m = document.getElementById('uninstallSpMsg');
@@ -591,7 +630,7 @@ document.addEventListener('DOMContentLoaded', function() {
           if (card) { card.style.opacity = '0.4'; }
           m.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#d1fae5;border:1px solid #10b981;border-radius:6px;margin-top:8px;">' +
             '<i class="fas fa-check-circle text-green-600"></i>' +
-            '<span style="color:#065f46;font-weight:500;">Протокол удалён. Клиенты: ' + (data.clients_removed || 0) + '</span></div>';
+            '<span style="color:#065f46;font-weight:500;">Протокол удалён. Подключения: ' + (data.clients_removed || 0) + '</span></div>';
           setTimeout(() => location.reload(), 1200);
         } else {
           // Error state
@@ -773,13 +812,15 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function loadBackups(serverId) {
+  const backupsList = document.getElementById('backupsList');
+  if (!backupsList) return;
   try {
     const response = await fetch(`/api/servers/${serverId}/backups`, {
       credentials: 'same-origin'
     });
     
     if (response.status === 401) {
-      document.getElementById('backupsList').innerHTML = '<div class="text-center text-red-500 py-4">{{ t("message.error") }}: {{ t("backups.login_required") }}</div>';
+      backupsList.innerHTML = '<div class="text-center text-red-500 py-4">{{ t("message.error") }}: {{ t("backups.login_required") }}</div>';
       return;
     }
     
@@ -814,12 +855,12 @@ async function loadBackups(serverId) {
         `;
       });
       html += '</div>';
-      document.getElementById('backupsList').innerHTML = html;
+      backupsList.innerHTML = html;
     } else {
-      document.getElementById('backupsList').innerHTML = '<div class="text-center text-gray-500 py-4">{{ t("backups.no_backups") }}</div>';
+      backupsList.innerHTML = '<div class="text-center text-gray-500 py-4">{{ t("backups.no_backups") }}</div>';
     }
   } catch (error) {
-    document.getElementById('backupsList').innerHTML = `<div class="text-center text-red-500 py-4">Error: ${error.message}</div>`;
+    backupsList.innerHTML = `<div class="text-center text-red-500 py-4">Error: ${error.message}</div>`;
   }
 }
 

@@ -99,3 +99,11 @@ The copied/customized project keeps the existing Amnezia VPN app outputs and add
 - WireGuard Standard clients: normal WireGuard QR Code and text configuration.
 - AmneziaWG/AWG2 clients: AmneziaWG app-compatible QR Code and text configuration.
 - AWG2 clients still keep the existing `vpn://` QR Code and text URL.
+
+## User Access Model
+
+Regular users do not add or manage VPN servers. Administrators create/manage servers, then assign each regular user access to selected servers in Settings -> Users.
+
+For every assigned server, the administrator can also allow or deny self-service connection config creation. If server access is removed from a user, that user's active configs on the removed server are disabled.
+
+In the original codebase these records are still named `clients` internally. In this fork they should be understood as VPN connection records owned by system users. Administrators choose the owner when creating a connection; regular users can only create connections for their own account when they have permission.
