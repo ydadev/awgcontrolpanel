@@ -138,6 +138,15 @@ class VpnClient
                         if (!empty($spConfig['server_port'])) {
                             $serverData['vpn_port'] = $spConfig['server_port'];
                         }
+                        if (!empty($spConfig['vpn_subnet'])) {
+                            $serverData['vpn_subnet'] = $spConfig['vpn_subnet'];
+                        }
+                        if (!empty($spConfig['gateway_ip'])) {
+                            $serverData['gateway_ip'] = $spConfig['gateway_ip'];
+                        }
+                        if (!empty($spExtras['wireguard_compatible'])) {
+                            $serverData['wireguard_compatible'] = true;
+                        }
                         // Override AWG params from protocol config
                         // AWG params can be at extras level (Jc, S1, etc.) or nested in extras.awg_params
                         $awgOverride = [];
@@ -171,6 +180,12 @@ class VpnClient
         if ($isWireguard) {
             $serverData = self::applyProtocolServerData($server, $serverData, $protoRow, $slug);
         }
+        $configSlug = (!empty($serverData['wireguard_compatible']) && $slug === 'awg2')
+            ? 'wireguard-standard'
+            : $slug;
+        $endpointHost = $isWireguard
+            ? self::resolveWireguardEndpointHost((string) ($serverData['host'] ?? ''))
+            : (string) ($serverData['host'] ?? '');
 
         $clientIP = self::getNextClientIP($serverData);
         $loginBase = $login !== null && $login !== '' ? $login : $name;
@@ -199,7 +214,7 @@ class VpnClient
                 'client_ip' => $clientIP,
                 'server_public_key' => $serverData['server_public_key'],
                 'preshared_key' => $serverData['preshared_key'],
-                'server_host' => $serverData['host'],
+                'server_host' => $endpointHost,
                 'server_port' => $serverData['vpn_port'],
                 'dns_servers' => $serverData['dns_servers'] ?? '1.1.1.1, 1.0.0.1',
             ];
@@ -214,7 +229,7 @@ class VpnClient
                 }
             }
 
-            $defaultAwgParams = self::getAwgParamDefaults($slug);
+            $defaultAwgParams = self::getAwgParamDefaults($configSlug);
 
             // Add AWG parameters (use UPPERCASE keys internal logic)
             foreach (array_keys($defaultAwgParams) as $key) {
@@ -243,7 +258,7 @@ class VpnClient
             }
 
             // Generate config from template
-            if ($protoRow && !empty($protoRow['output_template'])) {
+            if ($protoRow && !empty($protoRow['output_template']) && $configSlug === $slug) {
                 require_once __DIR__ . '/ProtocolService.php';
                 $config = ProtocolService::generateProtocolOutput($protoRow, $vars);
             } else {
@@ -253,15 +268,15 @@ class VpnClient
                     $clientIP,
                     $serverData['server_public_key'],
                     $serverData['preshared_key'],
-                    $serverData['host'],
+                    $endpointHost,
                     $serverData['vpn_port'],
                     is_array($awgParams) ? $awgParams : [],
-                    $slug
+                    $configSlug
                 );
             }
 
             self::addClientToServer($serverData, $keys['public'], $clientIP);
-            $qrCode = self::generateQRCode($config, $slug);
+            $qrCode = self::generateQRCode($config, $configSlug);
             $priv = $keys['private'];
             $pub = $keys['public'];
             $psk = $serverData['preshared_key'];
@@ -701,13 +716,29 @@ class VpnClient
     {
         $pdo = DB::conn();
         $stmt = $pdo->prepare('
-            SELECT c.*, p.name as protocol_name 
+            SELECT c.*, p.name as protocol_name, u.email as owner_email, u.name as owner_name, u.role as owner_role
             FROM vpn_clients c
             LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
             WHERE c.server_id = ? AND c.protocol_id = ? 
             ORDER BY c.created_at DESC
         ');
         $stmt->execute([$serverId, $protocolId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function listByServerAndProtocolForUser(int $serverId, int $protocolId, int $userId): array
+    {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('
+            SELECT c.*, p.name as protocol_name, u.email as owner_email, u.name as owner_name, u.role as owner_role
+            FROM vpn_clients c
+            LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
+            WHERE c.server_id = ? AND c.protocol_id = ? AND c.user_id = ?
+            ORDER BY c.created_at DESC
+        ');
+        $stmt->execute([$serverId, $protocolId, $userId]);
         return $stmt->fetchAll();
     }
 
@@ -816,12 +847,9 @@ class VpnClient
         $containerName = (string) ($serverData['container_name'] ?? '');
         $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
         $isAwg2 = (stripos($containerName, 'awg2') !== false || $protocolSlug === 'awg2');
-        $wgTool = $isAwg2 ? 'awg' : 'wg';
-
         $keygenScript = sprintf(
-            'set -e; umask 077; priv=$(%s genkey | tr -d "\r\n"); [ -n "$priv" ] || { echo empty_private_key; exit 1; }; pub=$(printf "%%s\n" "$priv" | %s pubkey | tr -d "\r\n"); [ -n "$pub" ] || { echo empty_public_key; exit 1; }; printf "%%s\n---\n%%s\n" "$priv" "$pub"',
-            $wgTool,
-            $wgTool
+            'set -e; umask 077; tool=$(command -v %s || command -v wg || true); [ -n "$tool" ] || { echo wireguard_tool_not_found; exit 1; }; priv=$("$tool" genkey | tr -d "\r\n"); [ -n "$priv" ] || { echo empty_private_key; exit 1; }; pub=$(printf "%%s\n" "$priv" | "$tool" pubkey | tr -d "\r\n"); [ -n "$pub" ] || { echo empty_public_key; exit 1; }; printf "%%s\n---\n%%s\n" "$priv" "$pub"',
+            $isAwg2 ? 'awg' : 'wg'
         );
         if ($protocolSlug === 'wireguard-standard') {
             $cmd = 'sh -lc ' . escapeshellarg($keygenScript);
@@ -866,8 +894,19 @@ class VpnClient
         $stmt->execute([$serverData['id']]);
         $usedIPs = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-        // Reserve network address and server gateway (.1)
-        $used = ['10.8.1.0' => true, '10.8.1.1' => true];
+        // Parse subnet and reserve the network address plus the gateway (.1 by default).
+        $parts = explode('/', (string) ($serverData['vpn_subnet'] ?? '10.8.1.0/24'), 2);
+        $networkLong = ip2long($parts[0]);
+        $prefix = isset($parts[1]) ? (int) $parts[1] : 24;
+        if ($networkLong === false || $prefix < 0 || $prefix > 32) {
+            throw new Exception('Invalid VPN subnet');
+        }
+
+        $gatewayIp = (string) ($serverData['gateway_ip'] ?? long2ip($networkLong + 1));
+        $used = [
+            long2ip($networkLong) => true,
+            $gatewayIp => true,
+        ];
         foreach ($usedIPs as $ip) {
             $used[$ip] = true;
         }
@@ -893,12 +932,10 @@ class VpnClient
             // Continue with DB-only check
         }
 
-        // Parse subnet
-        $parts = explode('/', $serverData['vpn_subnet']);
-        $networkLong = ip2long($parts[0]);
+        $hostCount = $prefix <= 30 ? (2 ** (32 - $prefix)) - 2 : max(1, 2 ** (32 - $prefix));
 
-        // Find next free IP starting from .1
-        for ($i = 1; $i <= 253; $i++) {
+        // Find next free host IP, starting after the gateway.
+        for ($i = 2; $i <= $hostCount; $i++) {
             $candidate = long2ip($networkLong + $i);
             if (!isset($used[$candidate])) {
                 return $candidate;
@@ -927,10 +964,6 @@ class VpnClient
                 'H3' => '2145217268-2146643749',
                 'H4' => '2146790761-2146860793',
                 'I1' => '<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>',
-                'I2' => '',
-                'I3' => '',
-                'I4' => '',
-                'I5' => '',
             ];
         }
 
@@ -1153,6 +1186,73 @@ class VpnClient
             $serverData['install_protocol'] = $slug;
         }
 
+        if ($protoRow && !empty($protoRow['id']) && !empty($serverData['id'])) {
+            try {
+                $pdo = DB::conn();
+                $stmt = $pdo->prepare('SELECT config_data FROM server_protocols WHERE server_id = ? AND protocol_id = ? LIMIT 1');
+                $stmt->execute([(int) $serverData['id'], (int) $protoRow['id']]);
+                $rawConfig = $stmt->fetchColumn();
+                $protocolConfig = $rawConfig ? json_decode((string) $rawConfig, true) : null;
+                if (is_array($protocolConfig)) {
+                    $extras = is_array($protocolConfig['extras'] ?? null) ? $protocolConfig['extras'] : [];
+                    if (isset($extras['result']) && is_array($extras['result'])) {
+                        $extras = array_merge($extras, $extras['result']);
+                    }
+                    if (!empty($protocolConfig['vpn_subnet'])) {
+                        $serverData['vpn_subnet'] = (string) $protocolConfig['vpn_subnet'];
+                    }
+                    if (!empty($protocolConfig['gateway_ip'])) {
+                        $serverData['gateway_ip'] = (string) $protocolConfig['gateway_ip'];
+                    }
+                    if (!empty($protocolConfig['server_port'])) {
+                        $serverData['vpn_port'] = (int) $protocolConfig['server_port'];
+                    }
+                    if (!empty($extras['vpn_port'])) {
+                        $serverData['vpn_port'] = (int) $extras['vpn_port'];
+                    }
+                    if (!empty($extras['server_public_key'])) {
+                        $serverData['server_public_key'] = (string) $extras['server_public_key'];
+                    }
+                    if (!empty($extras['preshared_key'])) {
+                        $serverData['preshared_key'] = (string) $extras['preshared_key'];
+                    }
+                    $awgSource = [];
+                    if (isset($protocolConfig['awg_params']) && is_array($protocolConfig['awg_params'])) {
+                        $awgSource = array_merge($awgSource, $protocolConfig['awg_params']);
+                    }
+                    if (isset($extras['awg_params']) && is_array($extras['awg_params'])) {
+                        $awgSource = array_merge($awgSource, $extras['awg_params']);
+                    }
+                    foreach (['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4', 'I1', 'I2', 'I3', 'I4', 'I5'] as $paramKey) {
+                        if (array_key_exists($paramKey, $extras)) {
+                            $awgSource[$paramKey] = $extras[$paramKey];
+                        }
+                        $upperKey = strtoupper($paramKey);
+                        if (array_key_exists($upperKey, $extras)) {
+                            $awgSource[$upperKey] = $extras[$upperKey];
+                        }
+                    }
+                    if (!empty($awgSource)) {
+                        $normalizedAwg = [];
+                        foreach ($awgSource as $key => $value) {
+                            $upperKey = strtoupper((string) $key);
+                            if (in_array($upperKey, ['JC', 'JMIN', 'JMAX', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4', 'I1', 'I2', 'I3', 'I4', 'I5'], true)) {
+                                $normalizedAwg[$upperKey] = $value;
+                            }
+                        }
+                        if (!empty($normalizedAwg)) {
+                            $serverData['awg_params'] = json_encode($normalizedAwg);
+                        }
+                    }
+                    if (!empty($extras['wireguard_compatible'])) {
+                        $serverData['wireguard_compatible'] = true;
+                    }
+                }
+            } catch (Exception $e) {
+                error_log('applyProtocolServerData config_data load failed: ' . $e->getMessage());
+            }
+        }
+
         try {
             $cont = (string) ($serverData['container_name'] ?? '');
             if ($cont === '') {
@@ -1209,6 +1309,24 @@ class VpnClient
         array $awgParams,
         string $protocolSlug = ''
     ): string {
+        $serverHost = self::resolveWireguardEndpointHost($serverHost);
+        $config = "[Interface]\n";
+        $config .= "Address = {$clientIP}/32\n";
+        $config .= "DNS = 1.1.1.1, 1.0.0.1\n";
+        $config .= "PrivateKey = {$privateKey}\n";
+
+        $usesAwgParams = in_array($protocolSlug, ['amnezia-wg', 'amnezia-wg-advanced', 'awg2'], true);
+        if (!$usesAwgParams) {
+            $config .= "\n[Peer]\n";
+            $config .= "PublicKey = {$serverPublicKey}\n";
+            $config .= "PresharedKey = {$presharedKey}\n";
+            $config .= "AllowedIPs = 0.0.0.0/0, ::/0\n";
+            $config .= "Endpoint = {$serverHost}:{$serverPort}\n";
+            $config .= "PersistentKeepalive = 25\n";
+
+            return $config;
+        }
+
         // Get default parameters for the protocol
         $defaultParams = self::getAwgParamDefaults($protocolSlug);
         
@@ -1236,13 +1354,8 @@ class VpnClient
             }
         }
         
-        $config = "[Interface]\n";
-        $config .= "Address = {$clientIP}/32\n";
-        $config .= "DNS = 1.1.1.1, 1.0.0.1\n";
-        $config .= "PrivateKey = {$privateKey}\n";
-
         // Add AWG parameters (in the order used by Amnezia app)
-        // For awg2 include I1-I5, S3, S4; for regular awg only H1-H4, Jc, Jmin, Jmax, S1, S2
+        // For awg2 include AWG 1.5 signature packets only when they are configured.
         // Order: Jc, Jmin, Jmax, S1, S2, S3, S4, H1, H2, H3, H4, I1, I2, I3, I4, I5
         $paramKeys = ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4'];
         if ($protocolSlug === 'awg2') {
@@ -1257,8 +1370,7 @@ class VpnClient
                 $value = $finalParams[strtoupper($key)];
             }
             
-            // Always add parameter if it's defined (even if empty for I2-I5)
-            if ($value !== null) {
+            if ($value !== null && trim((string) $value) !== '') {
                 $config .= "{$key} = {$value}\n";
             }
         }
@@ -1271,6 +1383,37 @@ class VpnClient
         $config .= "PersistentKeepalive = 25\n\n";
 
         return $config;
+    }
+
+    /**
+     * WireGuard client configs must contain a numeric endpoint so they do not
+     * depend on client-side DNS availability while establishing the tunnel.
+     */
+    private static function resolveWireguardEndpointHost(string $serverHost): string
+    {
+        $serverHost = trim($serverHost);
+        if ($serverHost === '') {
+            throw new Exception('WireGuard endpoint host is empty');
+        }
+
+        $unwrappedHost = trim($serverHost, '[]');
+        if (filter_var($unwrappedHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $unwrappedHost;
+        }
+        if (filter_var($unwrappedHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return '[' . $unwrappedHost . ']';
+        }
+
+        $resolvedAddresses = @gethostbynamel($unwrappedHost);
+        if (is_array($resolvedAddresses)) {
+            foreach ($resolvedAddresses as $resolvedAddress) {
+                if (filter_var($resolvedAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    return $resolvedAddress;
+                }
+            }
+        }
+
+        throw new Exception("Unable to resolve WireGuard endpoint host '{$serverHost}' to an IPv4 address");
     }
 
     /**
@@ -1325,24 +1468,24 @@ class VpnClient
             throw new Exception('Refusing to add client with empty public key');
         }
 
-        // Determine correct tool names (awg for AWG2, wg for standard)
-        $wgTool = $isAwg2 ? 'awg' : 'wg';
-        $wgQuickTool = $isAwg2 ? 'awg-quick' : 'wg-quick';
-
         // 1. Create temp file for PSK (to avoid shell escaping issues)
         $pskFile = '/tmp/' . bin2hex(random_bytes(8)) . '.psk';
         $cmd1 = sprintf("docker exec -i %s sh -c 'echo \"%s\" > %s'", $containerName, $presharedKey, $pskFile);
         self::executeServerCommand($serverData, $cmd1, true);
 
-        // 2. Add peer using wg/awg set
-        $cmd2 = sprintf(
-            "docker exec -i %s %s set %s peer %s preshared-key %s allowed-ips %s/32",
-            $containerName,
-            $wgTool,
-            $ifaceName,
+        // 2. Add peer using the available WG/AWG userspace tool.
+        $setScript = sprintf(
+            'set -e; tool=$(command -v %s || command -v wg || true); [ -n "$tool" ] || { echo wireguard_tool_not_found; exit 1; }; "$tool" set %s peer %s preshared-key %s allowed-ips %s',
+            $isAwg2 ? 'awg' : 'wg',
+            escapeshellarg($ifaceName),
             escapeshellarg($publicKey),
-            $pskFile,
-            $clientIP
+            escapeshellarg($pskFile),
+            escapeshellarg($clientIP . '/32')
+        );
+        $cmd2 = sprintf(
+            "docker exec -i %s sh -lc %s",
+            escapeshellarg($containerName),
+            escapeshellarg($setScript)
         );
         self::executeServerCommand($serverData, $cmd2, true);
 
@@ -1365,7 +1508,13 @@ class VpnClient
 
         // 6. CRITICAL: Reload WG interface to apply AWG obfuscation params
         // Without this, the interface uses standard WireGuard without Jc/S1/S2/H1-H4
-        $cmd5 = sprintf("docker exec -i %s sh -c 'ip link del %s 2>/dev/null || true; %s up %s/%s 2>&1'", $containerName, $ifaceName, $wgQuickTool, $configDir, $configFile);
+        $reloadScript = sprintf(
+            'set -e; ip link del %s 2>/dev/null || true; quick=$(command -v %s || command -v wg-quick || true); [ -n "$quick" ] || { echo wireguard_quick_tool_not_found; exit 1; }; "$quick" up %s 2>&1',
+            escapeshellarg($ifaceName),
+            $isAwg2 ? 'awg-quick' : 'wg-quick',
+            escapeshellarg($configDir . '/' . $configFile)
+        );
+        $cmd5 = sprintf("docker exec -i %s sh -lc %s", escapeshellarg($containerName), escapeshellarg($reloadScript));
         self::executeServerCommand($serverData, $cmd5, true);
     }
 
@@ -1526,13 +1675,29 @@ class VpnClient
     {
         $pdo = DB::conn();
         $stmt = $pdo->prepare('
-            SELECT c.*, p.name as protocol_name, p.show_text_content
+            SELECT c.*, p.name as protocol_name, p.show_text_content, u.email as owner_email, u.name as owner_name, u.role as owner_role
             FROM vpn_clients c
             LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
             WHERE c.server_id = ? 
             ORDER BY c.created_at DESC
         ');
         $stmt->execute([$serverId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function listByServerForUser(int $serverId, int $userId): array
+    {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('
+            SELECT c.*, p.name as protocol_name, p.show_text_content, u.email as owner_email, u.name as owner_name, u.role as owner_role
+            FROM vpn_clients c
+            LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
+            WHERE c.server_id = ? AND c.user_id = ?
+            ORDER BY c.created_at DESC
+        ');
+        $stmt->execute([$serverId, $userId]);
         return $stmt->fetchAll();
     }
 
@@ -1543,10 +1708,12 @@ class VpnClient
     {
         $pdo = DB::conn();
         $stmt = $pdo->prepare('
-            SELECT c.*, s.name as server_name, s.host as server_host, p.name as protocol_name, p.show_text_content
+            SELECT c.*, s.name as server_name, s.host as server_host, p.name as protocol_name, p.show_text_content, u.email as owner_email, u.name as owner_name, u.role as owner_role
             FROM vpn_clients c
             LEFT JOIN vpn_servers s ON c.server_id = s.id
             LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
+            JOIN user_server_access usa ON usa.user_id = c.user_id AND usa.server_id = c.server_id AND usa.can_view = 1
             WHERE c.user_id = ?
             ORDER BY c.created_at DESC
         ');
@@ -1663,15 +1830,17 @@ class VpnClient
             $configFile = 'wg0.conf';
         }
         $ifaceName = str_replace('.conf', '', $configFile);
-        $wgTool = $isAwg2 ? 'awg' : 'wg';
-
-        // First, remove using wg/awg command (live removal)
-        $removeCmd = sprintf(
-            "docker exec -i %s %s set %s peer %s remove",
-            $containerName,
-            $wgTool,
-            $ifaceName,
+        // First, remove using the available WG/AWG userspace tool (live removal)
+        $removeScript = sprintf(
+            'set -e; tool=$(command -v %s || command -v wg || true); [ -n "$tool" ] || { echo wireguard_tool_not_found; exit 1; }; "$tool" set %s peer %s remove',
+            $isAwg2 ? 'awg' : 'wg',
+            escapeshellarg($ifaceName),
             escapeshellarg($publicKey)
+        );
+        $removeCmd = sprintf(
+            "docker exec -i %s sh -lc %s",
+            escapeshellarg($containerName),
+            escapeshellarg($removeScript)
         );
 
         self::executeServerCommand($serverData, $removeCmd, true);
@@ -1697,8 +1866,12 @@ class VpnClient
         self::executeServerCommand($serverData, $writeCmd, true);
 
         // Save config
-        $wgQuickTool = $isAwg2 ? 'awg-quick' : 'wg-quick';
-        $saveCmd = sprintf("docker exec -i %s %s save %s", $containerName, $wgQuickTool, $ifaceName);
+        $saveScript = sprintf(
+            'set -e; quick=$(command -v %s || command -v wg-quick || true); [ -n "$quick" ] || { echo wireguard_quick_tool_not_found; exit 1; }; "$quick" save %s',
+            $isAwg2 ? 'awg-quick' : 'wg-quick',
+            escapeshellarg($ifaceName)
+        );
+        $saveCmd = sprintf("docker exec -i %s sh -lc %s", escapeshellarg($containerName), escapeshellarg($saveScript));
         self::executeServerCommand($serverData, $saveCmd, true);
 
         // Remove from clientsTable
@@ -1847,6 +2020,10 @@ class VpnClient
         // Resolve authoritative server params for THIS protocol from its own container
         // (correct key/PSK/port/AWG params even when it is a secondary protocol).
         $serverData = self::applyProtocolServerData($server, $serverData, $protoRow, $slug);
+        $configSlug = (!empty($serverData['wireguard_compatible']) && $slug === 'awg2')
+            ? 'wireguard-standard'
+            : $slug;
+        $endpointHost = self::resolveWireguardEndpointHost((string) ($serverData['host'] ?? ''));
 
         $privateKey = (string) ($this->data['private_key'] ?? '');
         $clientPublicKey = (string) ($this->data['public_key'] ?? '');
@@ -1871,7 +2048,7 @@ class VpnClient
 
         // If AWG params are missing (common after reinstall), fetch them directly from wg0.conf
         // to avoid falling back to template defaults that will not match the server.
-        if (in_array($slug, ['amnezia-wg-advanced', 'awg2'], true)) {
+        if (in_array($configSlug, ['amnezia-wg-advanced', 'awg2'], true)) {
             $needKeys = ['JC', 'JMIN', 'JMAX', 'S1', 'S2', 'H1', 'H2', 'H3', 'H4'];
             $missing = false;
             foreach ($needKeys as $k) {
@@ -1904,7 +2081,7 @@ class VpnClient
                 }
             }
 
-            $awgParams = array_merge(self::getAwgParamDefaults($slug), $awgParams);
+            $awgParams = array_merge(self::getAwgParamDefaults($configSlug), $awgParams);
 
             // Still missing? Refuse to overwrite config with template defaults.
             foreach ($needKeys as $k) {
@@ -1937,12 +2114,12 @@ class VpnClient
             'client_ip' => $clientIP,
             'server_public_key' => (string) ($serverData['server_public_key'] ?? ''),
             'preshared_key' => $presharedKeyForConfig,
-            'server_host' => (string) ($serverData['host'] ?? ''),
+            'server_host' => $endpointHost,
             'server_port' => (string) ((int) ($serverData['vpn_port'] ?? 0)),
             'dns_servers' => (string) ($serverData['dns_servers'] ?? '1.1.1.1, 1.0.0.1'),
         ];
 
-        foreach (array_keys(self::getAwgParamDefaults($slug)) as $key) {
+        foreach (array_keys(self::getAwgParamDefaults($configSlug)) as $key) {
             if (isset($awgParams[$key])) {
                 $vars[$key] = $awgParams[$key];
             }
@@ -1963,7 +2140,7 @@ class VpnClient
             }
         }
 
-        if ($protoRow && !empty($protoRow['output_template'])) {
+        if ($protoRow && !empty($protoRow['output_template']) && $configSlug === $slug) {
             require_once __DIR__ . '/ProtocolService.php';
             $config = ProtocolService::generateProtocolOutput($protoRow, $vars);
         } else {
@@ -1972,14 +2149,14 @@ class VpnClient
                 $clientIP,
                 (string) ($serverData['server_public_key'] ?? ''),
                 $presharedKeyForConfig,
-                (string) ($serverData['host'] ?? ''),
+                $endpointHost,
                 (int) ($serverData['vpn_port'] ?? 0),
                 $awgParams,
-                $slug
+                $configSlug
             );
         }
 
-        $qrCode = self::generateQRCode($config, $slug);
+        $qrCode = self::generateQRCode($config, $configSlug);
 
         $pdo = DB::conn();
         $stmt = $pdo->prepare('UPDATE vpn_clients SET config = ?, qr_code = ?, preshared_key = ? WHERE id = ?');
@@ -2755,5 +2932,3 @@ class VpnClient
         return $disabled;
     }
 }
-
-

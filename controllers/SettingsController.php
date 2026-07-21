@@ -12,7 +12,10 @@ class SettingsController {
     public function index() {
         $stats = $this->getTranslationStats();
         $users = $this->getAllUsers();
+        $allServers = VpnServer::listAll();
+        $userServerAccess = UserServerAccess::mapForUsers();
         $apiKey = $this->getApiKey('openrouter');
+        $branding = Branding::get(Config::get('APP_NAME', 'AWG Control Panel'));
 
         // LDAP data for embedded tab
         $stmt = $this->pdo->query("SELECT * FROM ldap_configs WHERE id = 1");
@@ -45,7 +48,10 @@ class SettingsController {
         $data = [
             'translation_stats' => $stats,
             'users' => $users,
+            'all_servers' => $allServers,
+            'user_server_access' => $userServerAccess,
             'openrouter_key' => $apiKey,
+            'branding' => $branding,
             // LDAP
             'config' => $config,
             'mappings' => $mappings,
@@ -199,6 +205,139 @@ class SettingsController {
         $stmt->execute([$name, $email, $passwordHash, $role]);
         
         $_SESSION['settings_success'] = 'User added successfully';
+        header('Location: /settings#users');
+        exit;
+    }
+
+    public function changeUserPassword($userId) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $user = Auth::user();
+        if ($user['role'] !== 'admin') {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
+        $userId = (int)$userId;
+        if ($userId <= 0 || $userId === (int)$user['id']) {
+            $_SESSION['settings_error'] = 'Use the profile tab to change your own password';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $newPassword = $_POST['new_password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+
+        if ($newPassword === '' || $confirmPassword === '') {
+            $_SESSION['settings_error'] = 'Password fields are required';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        if ($newPassword !== $confirmPassword) {
+            $_SESSION['settings_error'] = 'New passwords do not match';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        if (strlen($newPassword) < 6) {
+            $_SESSION['settings_error'] = 'Password must be at least 6 characters';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $stmt = $this->pdo->prepare("SELECT id, email FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+        $target = $stmt->fetch();
+        if (!$target) {
+            $_SESSION['settings_error'] = 'User not found';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $hash = password_hash($newPassword, PASSWORD_BCRYPT);
+        $stmt = $this->pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+        $stmt->execute([$hash, $userId]);
+
+        $_SESSION['settings_success'] = 'Password updated for ' . $target['email'];
+        header('Location: /settings#users');
+        exit;
+    }
+
+    public function saveBranding() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /settings#branding');
+            exit;
+        }
+
+        $user = Auth::user();
+        if ($user['role'] !== 'admin') {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
+        try {
+            Branding::save($_POST, $_FILES['logo_file'] ?? null);
+            $_SESSION['settings_success'] = 'Branding settings saved';
+        } catch (Throwable $e) {
+            $_SESSION['settings_error'] = 'Failed to save branding: ' . $e->getMessage();
+        }
+
+        header('Location: /settings#branding');
+        exit;
+    }
+
+    public function saveUserServerAccess($userId) {
+        $user = Auth::user();
+        if ($user['role'] !== 'admin') {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
+        $userId = (int)$userId;
+        if ($userId <= 0) {
+            $_SESSION['settings_error'] = 'Invalid user';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $stmt = $this->pdo->prepare("SELECT id, role FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $target = $stmt->fetch();
+        if (!$target) {
+            $_SESSION['settings_error'] = 'User not found';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        if ($target['role'] === 'admin') {
+            $_SESSION['settings_error'] = 'Server access is managed only for regular users';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $serverIds = $_POST['server_ids'] ?? [];
+        $createClientServerIds = $_POST['create_client_server_ids'] ?? [];
+        if (!is_array($serverIds)) {
+            $serverIds = [];
+        }
+        if (!is_array($createClientServerIds)) {
+            $createClientServerIds = [];
+        }
+
+        try {
+            UserServerAccess::replaceForUser($userId, $serverIds, $createClientServerIds);
+            $_SESSION['settings_success'] = 'User server access updated';
+        } catch (Throwable $e) {
+            $_SESSION['settings_error'] = 'Failed to update server access: ' . $e->getMessage();
+        }
+
         header('Location: /settings#users');
         exit;
     }

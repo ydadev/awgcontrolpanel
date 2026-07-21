@@ -19,6 +19,9 @@ Important changes in this copy:
 - Client pages now keep the existing Amnezia VPN app outputs and additionally generate raw WireGuard-style QR/text configuration:
   - WireGuard Standard clients get a normal WireGuard config QR and text block.
   - AmneziaWG/AWG2 clients get an AmneziaWG app-compatible WireGuard-style config QR and text block.
+- Regular users no longer manage VPN servers directly. Administrators assign server access per user and can separately allow users to create their own connection configs; removing server access disables that user's active configs on that server.
+- VPN "clients" in the original codebase are treated in this fork as connection records. Each connection belongs to a system user; administrators choose the owner when creating a connection, while regular users can only create connections for their own account when allowed.
+- Phase 1 of the individual routing subsystem has been started: routing schema, RBAC hooks, admin/user UI entry points, routing user groups, revision builder, outbox worker scaffolding, Redis service, and routing documentation were added without changing the current VPN data plane. If a user is assigned to a routing group, group routing permissions take priority and individual route editing is disabled for that user.
 
 ## Features
 
@@ -35,7 +38,7 @@ Important changes in this copy:
 - QR code generation for mobile apps, including Amnezia VPN app, `vpn://` URL, WireGuard, and AmneziaWG app-compatible configs
 - Multi-language interface (English, Russian, Spanish, German, French, Chinese)
 - REST API with JWT authentication
-- User authentication and access control
+- User authentication, roles, and per-user server access control
 - **Automatic client expiration and traffic limit checks** via cron
 
 ## Available Protocols
@@ -49,7 +52,7 @@ Important changes in this copy:
 - MTProxy (Telegram) (`mtproxy`)
 - SMB Server (`smb`)
 - AIVPN (`aivpn`) - https://github.com/infosave2007/aivpn
-- Cloudflare WARP Proxy (`cf-warp`) вЂ” transparent traffic proxying via Cloudflare
+- Cloudflare WARP Proxy (`cf-warp`) — transparent traffic proxying via Cloudflare
 
 
 ## Requirements
@@ -136,7 +139,7 @@ JWT_SECRET=replace-with-at-least-32-random-characters
 
 ### Add VPN Server
 
-1. Servers в†’ Add Server
+1. Servers → Add Server
 2. Enter: name, host IP, SSH port, username
 3. Choose authentication method: **Password** or **SSH Key**
    - For SSH Key: Paste your private key (PEM/OpenSSH format)
@@ -227,7 +230,7 @@ curl -X POST http://localhost:8082/api/servers/1/restore \
 
 ### Protocol Management
 
-Manage VPN protocols via **Settings в†’ Protocols**:
+Manage VPN protocols via **Settings → Protocols**:
 - Install/Uninstall protocols (WireGuard, AmneziaWG, OpenVPN, etc.)
 - Configure protocol settings (ports, transport, obfuscation)
 - **AI Assistant**: Use "Ask AI" to generate complex protocol configurations tailored to your needs (requires OpenRouter API key).
@@ -236,14 +239,14 @@ Manage VPN protocols via **Settings в†’ Protocols**:
 
 WARP transparently proxies **all TCP traffic** from VPN clients through the Cloudflare network, hiding the server's real IP address.
 
-> **вљ пёЏ Install WARP last** вЂ” after all other protocols (AWG, X-Ray, AIVPN, etc.). During installation, WARP automatically detects active VPN containers and interfaces and configures routing for each of them.
+> **⚠️ Install WARP last** — after all other protocols (AWG, X-Ray, AIVPN, etc.). During installation, WARP automatically detects active VPN containers and interfaces and configures routing for each of them.
 
 **Supported protocols:**
-- **AWG / AWG2** вЂ” routing via container IP + host redsocks
-- **X-Ray VLESS** вЂ” `warp-out` outbound via SOCKS5 in X-Ray config
-- **AIVPN / WireGuard** вЂ” routing via host-level iptables + redsocks
+- **AWG / AWG2** — routing via container IP + host redsocks
+- **X-Ray VLESS** — `warp-out` outbound via SOCKS5 in X-Ray config
+- **AIVPN / WireGuard** — routing via host-level iptables + redsocks
 
-**Verification:** connect to VPN and open `https://1.1.1.1/cdn-cgi/trace` вЂ” the field `warp=on` confirms it's working.
+**Verification:** connect to VPN and open `https://1.1.1.1/cdn-cgi/trace` — the field `warp=on` confirms it's working.
 
 ### Scenario Testing & Logs
 
@@ -397,7 +400,7 @@ Add OpenRouter API key in Settings, then run:
 docker compose exec web php bin/translate_all.php
 ```
 
-Or translate via web interface: Settings в†’ Auto-translate
+Or translate via web interface: Settings → Auto-translate
 
 ## Structure
 
@@ -435,4 +438,3 @@ MIT
 ## Credits
 
 `awgcontrolpanel` is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Thank you to the original project author(s) for publishing the base panel and making this customization possible.
-

@@ -33,7 +33,9 @@
 <div class="max-w-7xl mx-auto px-4 py-8">
   <div class="flex justify-between items-center mb-6">
     <h1 class="text-3xl font-bold">{{ t('servers.title') }}</h1>
+    {% if user.role == 'admin' %}
     <a href="/servers/create" class="gradient-bg text-white px-4 py-2 rounded"><i class="fas fa-plus"></i> {{ t('servers.add') }}</a>
+    {% endif %}
   </div>
   
   {% if session.success_message %}
@@ -98,11 +100,13 @@
             <a href="/servers/{{ server.id }}" class="text-purple-600 hover:text-purple-900">
               <i class="fas fa-eye mr-1"></i>{{ t('servers.view') }}
             </a>
+            {% if user.role == 'admin' %}
             <form method="POST" action="/servers/{{ server.id }}/delete" class="inline" id="delete-form-{{ server.id }}">
               <button type="button" class="text-red-600 hover:text-red-900" onclick="(async()=>{ event.stopPropagation(); if(await showConfirmModal('Удалить сервер {{ server.name }}?', 'Удаление сервера')) { document.getElementById('delete-form-{{ server.id }}').submit(); } })()">
                 <i class="fas fa-trash mr-1"></i>{{ t('servers.delete') }}
               </button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -112,7 +116,11 @@
   {% else %}
   <div class="bg-white rounded shadow p-12 text-center">
     <p class="text-gray-500 mb-4">{{ t('dashboard.no_servers') }}</p>
+    {% if user.role == 'admin' %}
     <a href="/servers/create" class="gradient-bg text-white px-6 py-3 rounded inline-block">{{ t('dashboard.add_first_server') }}</a>
+    {% else %}
+    <p class="text-sm text-gray-400">No servers have been assigned to your account yet.</p>
+    {% endif %}
   </div>
   {% endif %}
 </div>

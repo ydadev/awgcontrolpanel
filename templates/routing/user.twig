@@ -1,0 +1,52 @@
+{% extends "layout.twig" %}
+{% block title %}Мои маршруты{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8">
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold">Мои маршруты</h1>
+    <p class="text-gray-600 mt-2">Пользовательские маршруты будут применяться после включения routing-agent администратором.</p>
+  </div>
+
+  {% if routing_group %}
+    <div class="mb-6 bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3 rounded">
+      Ваши настройки маршрутизации управляются группой <strong>{{ routing_group.name }}</strong>. Индивидуальные IP-списки и личные настройки отключены.
+    </div>
+  {% endif %}
+
+  <div class="bg-white rounded shadow p-6 mb-8">
+    <h2 class="font-bold mb-4">Разрешённые выходы</h2>
+    <table class="w-full">
+      <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Ingress</th><th class="px-4 py-2 text-left">Egress</th><th class="px-4 py-2 text-left">Limits</th></tr></thead>
+      <tbody>
+      {% for link in links %}
+        <tr class="border-t"><td class="px-4 py-2">{{ link.ingress_server_name }}</td><td class="px-4 py-2">{{ link.egress_server_name }}</td><td class="px-4 py-2">max {{ link.max_routes }}, /{{ link.minimum_prefix_length }}+</td></tr>
+      {% else %}
+        <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">Администратор пока не разрешил выходные links.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if not routing_group %}
+    <div class="bg-white rounded shadow p-6">
+      <h2 class="font-bold mb-4">Мои IP-списки</h2>
+      <form method="POST" action="/my/routes/ip-lists" class="space-y-3 mb-6">
+        <input name="name" class="w-full px-3 py-2 border rounded" placeholder="Название списка" required>
+        <textarea name="entries" class="w-full px-3 py-2 border rounded" rows="4" placeholder="8.8.8.8/32&#10;1.1.1.0/24"></textarea>
+        <button class="gradient-bg text-white px-4 py-2 rounded w-full">Создать список</button>
+      </form>
+      <table class="w-full">
+        <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Created</th></tr></thead>
+        <tbody>
+        {% for list in ip_lists %}
+          <tr class="border-t"><td class="px-4 py-2">{{ list.name }}</td><td class="px-4 py-2">{{ list.created_at }}</td></tr>
+        {% else %}
+          <tr><td colspan="2" class="px-4 py-8 text-center text-gray-500">Списков пока нет</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

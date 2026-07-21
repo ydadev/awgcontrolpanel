@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AWG Routing Agent Configuration",
+  "type": "object",
+  "required": ["server_id", "version", "configuration_hash", "configuration"],
+  "properties": {
+    "server_id": { "type": "integer", "minimum": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "created_at": { "type": "string" },
+    "configuration_hash": { "type": "string", "minLength": 64, "maxLength": 64 },
+    "signature": { "type": ["string", "null"] },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

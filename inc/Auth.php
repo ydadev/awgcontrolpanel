@@ -81,6 +81,19 @@ class Auth {
     return $u && ($u['role'] === 'admin');
   }
 
+  public static function can(string $permission, ?array $user = null): bool {
+    $user = $user ?: self::user();
+    if (!$user || ($user['status'] ?? 'active') !== 'active') return false;
+    if (($user['role'] ?? '') === 'admin') return true;
+
+    $userPermissions = [
+      'routing.view',
+      'routing.manage_own_routes',
+    ];
+
+    return in_array($permission, $userPermissions, true);
+  }
+
   public static function seedAdmin(string $email, string $password): void {
     $pdo = DB::conn();
     $email = strtolower(trim($email));
