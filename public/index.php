@@ -357,8 +357,8 @@ Router::post('/register', function () {
     try {
         $success = Auth::register($name, $email, $password);
         if ($success) {
-            Auth::login($email, $password);
-            redirect('/dashboard');
+            View::render('login.twig', ['success' => 'Account created. An administrator must enable site access before you can sign in.']);
+            return;
         }
     } catch (Throwable $e) {
         // Email already exists or other error
@@ -4104,6 +4104,15 @@ Router::post('/settings/users/{id}/server-access', function ($params) {
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
     $controller->saveUserServerAccess($params['id']);
+});
+
+// Enable or disable panel access for a regular user
+Router::post('/settings/users/{id}/site-access', function ($params) {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->saveUserSiteAccess($params['id']);
 });
 
 // Save UI branding
