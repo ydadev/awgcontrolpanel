@@ -694,7 +694,8 @@ class InstallProtocolManager
                                 $serverHost,
                                 $details['vpn_port'] ?? 51820,
                                 $details['awg_params'] ?? [],
-                                $protocolSlug
+                                $protocolSlug,
+                                (string) ($serverData['dns_servers'] ?? '1.1.1.1, 1.0.0.1')
                             );
                             $qrCode = VpnClient::generateQRCode($config, $protocolSlug);
                             
