@@ -170,7 +170,8 @@ class SettingsController {
         $name = trim($_POST['name'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
-        $role = $_POST['role'] ?? 'user';
+        $role = ($_POST['role'] ?? 'user') === 'admin' ? 'admin' : 'user';
+        $status = $role === 'admin' || !empty($_POST['site_access']) ? 'active' : 'disabled';
         
         if (empty($name) || empty($email) || empty($password)) {
             $_SESSION['settings_error'] = 'All fields are required';
@@ -201,8 +202,8 @@ class SettingsController {
         
         // Create user
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
-        $stmt = $this->pdo->prepare("INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)");
-        $stmt->execute([$name, $email, $passwordHash, $role]);
+        $stmt = $this->pdo->prepare("INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$name, $email, $passwordHash, $role, $status]);
         
         $_SESSION['settings_success'] = 'User added successfully';
         header('Location: /settings#users');
@@ -341,6 +342,44 @@ class SettingsController {
         header('Location: /settings#users');
         exit;
     }
+
+    public function saveUserSiteAccess($userId) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $user = Auth::user();
+        if (($user['role'] ?? '') !== 'admin') {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
+        $userId = (int)$userId;
+        $stmt = $this->pdo->prepare("SELECT id, email, role FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+        $target = $stmt->fetch();
+
+        if (!$target) {
+            $_SESSION['settings_error'] = 'User not found';
+            header('Location: /settings#users');
+            exit;
+        }
+        if ($target['role'] === 'admin') {
+            $_SESSION['settings_error'] = 'Administrators always have site access';
+            header('Location: /settings#users');
+            exit;
+        }
+
+        $status = !empty($_POST['site_access']) ? 'active' : 'disabled';
+        $stmt = $this->pdo->prepare("UPDATE users SET status = ? WHERE id = ? AND role = 'user'");
+        $stmt->execute([$status, $userId]);
+
+        $_SESSION['settings_success'] = 'Site access updated for ' . $target['email'];
+        header('Location: /settings#users');
+        exit;
+    }
     
     public function deleteUser($userId) {
         $user = Auth::user();
@@ -365,7 +404,7 @@ class SettingsController {
     }
     
     private function getAllUsers() {
-        $stmt = $this->pdo->query("SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC");
+        $stmt = $this->pdo->query("SELECT id, name, email, role, status, created_at FROM users ORDER BY created_at DESC");
         return $stmt->fetchAll();
     }
     

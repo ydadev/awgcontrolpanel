@@ -266,6 +266,12 @@
                                 <option value="admin">{{ t('users.role_admin') }}</option>
                             </select>
                         </div>
+                        <div class="flex items-center">
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" name="site_access" value="1" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                <span class="ml-2 text-sm text-gray-700">Site access</span>
+                            </label>
+                        </div>
                     </div>
                     <button type="submit" class="mt-4 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
                         <i class="fas fa-user-plus mr-2"></i>{{ t('users.add_user') }}
@@ -286,6 +292,7 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.name') }}</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.email') }}</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('users.role') }}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site access</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Server access</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('users.created') }}</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('settings.actions') }}</th>
@@ -306,6 +313,27 @@
                             <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ t('users.role_admin') }}</span>
                             {% else %}
                             <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{ t('users.role_user') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm">
+                            {% if u.role == 'admin' %}
+                            <label class="inline-flex items-center text-gray-500" title="Administrators always have access">
+                                <input type="checkbox" checked disabled class="rounded border-gray-300 text-purple-600">
+                                <span class="ml-2">Enabled</span>
+                            </label>
+                            {% else %}
+                            <form method="POST" action="/settings/users/{{ u.id }}/site-access" class="inline-flex">
+                                <input type="hidden" name="site_access" value="0">
+                                <label class="inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" name="site_access" value="1"
+                                           class="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                           {% if u.status == 'active' %}checked{% endif %}
+                                           onchange="this.form.submit()">
+                                    <span class="ml-2 {% if u.status == 'active' %}text-green-700{% else %}text-gray-500{% endif %}">
+                                        {{ u.status == 'active' ? 'Enabled' : 'Disabled' }}
+                                    </span>
+                                </label>
+                            </form>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 text-sm">

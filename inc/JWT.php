@@ -124,11 +124,11 @@ class JWT {
         
         // Get user from database
         $pdo = DB::conn();
-        $stmt = $pdo->prepare('SELECT id, name, email, role FROM users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, name, email, role, status FROM users WHERE id = ?');
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
-        
-        return $user ?: null;
+
+        return ($user && Auth::canAccessSite($user)) ? $user : null;
     }
     
     /**

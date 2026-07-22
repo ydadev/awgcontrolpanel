@@ -10,7 +10,7 @@ class Auth {
     if ($stmt->fetchColumn()) return false;
     $hash = password_hash($password, PASSWORD_DEFAULT);
     $stmt = $pdo->prepare('INSERT INTO users (email, password_hash, name, role, status) VALUES (?, ?, ?, ?, ?)');
-    return $stmt->execute([$email, $hash, $name ?: $email, 'user', 'active']);
+    return $stmt->execute([$email, $hash, $name ?: $email, 'user', 'disabled']);
   }
 
   public static function login(string $email, string $password): bool {
@@ -29,14 +29,19 @@ class Auth {
         
         if (!$user) {
           // Create new LDAP user
-          $stmt = $pdo->prepare('INSERT INTO users (email, password_hash, name, role, status, ldap_synced, ldap_dn) VALUES (?, \'\', ?, ?, \'active\', 1, ?)');
-          $stmt->execute([$ldapUser['email'], $ldapUser['display_name'], $ldapUser['role'], $ldapUser['ldap_dn']]);
+          $status = $ldapUser['role'] === 'admin' ? 'active' : 'disabled';
+          $stmt = $pdo->prepare('INSERT INTO users (email, password_hash, name, role, status, ldap_synced, ldap_dn) VALUES (?, \'\', ?, ?, ?, 1, ?)');
+          $stmt->execute([$ldapUser['email'], $ldapUser['display_name'], $ldapUser['role'], $status, $ldapUser['ldap_dn']]);
           $userId = (int)$pdo->lastInsertId();
+          if ($status !== 'active') return false;
         } else {
           $userId = (int)$user['id'];
           // Update user info from LDAP
-          $stmt = $pdo->prepare('UPDATE users SET email = ?, name = ?, role = ?, status = \'active\', last_login_at = NOW() WHERE id = ?');
+          $stmt = $pdo->prepare('UPDATE users SET email = ?, name = ?, role = ?, last_login_at = NOW() WHERE id = ?');
           $stmt->execute([$ldapUser['email'], $ldapUser['display_name'], $ldapUser['role'], $userId]);
+
+          $user['role'] = $ldapUser['role'];
+          if (!self::canAccessSite($user)) return false;
         }
         
         $_SESSION['user_id'] = $userId;
@@ -50,13 +55,14 @@ class Auth {
     $user = $stmt->fetch();
     if (!$user) return false;
     if (!password_verify($password, $user['password_hash'])) return false;
+    if (!self::canAccessSite($user)) return false;
     $_SESSION['user_id'] = (int)$user['id'];
     $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?')->execute([$user['id']]);
     return true;
   }
 
   public static function logout(): void { unset($_SESSION['user_id']); }
-  public static function check(): bool { return isset($_SESSION['user_id']); }
+  public static function check(): bool { return self::user() !== null; }
 
   public static function getUserByEmail(string $email): ?array {
     $pdo = DB::conn();
@@ -68,12 +74,20 @@ class Auth {
   }
 
   public static function user(): ?array {
-    if (!self::check()) return null;
+    if (!isset($_SESSION['user_id'])) return null;
     $pdo = DB::conn();
     $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
     $stmt->execute([$_SESSION['user_id']]);
     $u = $stmt->fetch();
-    return $u ?: null;
+    if (!$u || !self::canAccessSite($u)) {
+      self::logout();
+      return null;
+    }
+    return $u;
+  }
+
+  public static function canAccessSite(array $user): bool {
+    return ($user['role'] ?? '') === 'admin' || ($user['status'] ?? 'active') === 'active';
   }
 
   public static function isAdmin(): bool {
@@ -83,7 +97,7 @@ class Auth {
 
   public static function can(string $permission, ?array $user = null): bool {
     $user = $user ?: self::user();
-    if (!$user || ($user['status'] ?? 'active') !== 'active') return false;
+    if (!$user || !self::canAccessSite($user)) return false;
     if (($user['role'] ?? '') === 'admin') return true;
 
     $userPermissions = [
