@@ -271,7 +271,8 @@ class VpnClient
                     $endpointHost,
                     $serverData['vpn_port'],
                     is_array($awgParams) ? $awgParams : [],
-                    $configSlug
+                    $configSlug,
+                    (string) ($serverData['dns_servers'] ?? '1.1.1.1, 1.0.0.1')
                 );
             }
 
@@ -789,7 +790,8 @@ class VpnClient
                 $serverData['host'],
                 (int) $serverData['vpn_port'],
                 $awgParams,
-                (string) ($serverData['install_protocol'] ?? '')
+                (string) ($serverData['install_protocol'] ?? ''),
+                (string) ($serverData['dns_servers'] ?? '1.1.1.1, 1.0.0.1')
             );
         }
 
@@ -1307,12 +1309,17 @@ class VpnClient
         string $serverHost,
         int $serverPort,
         array $awgParams,
-        string $protocolSlug = ''
+        string $protocolSlug = '',
+        string $dnsServers = '1.1.1.1, 1.0.0.1'
     ): string {
         $serverHost = self::resolveWireguardEndpointHost($serverHost);
+        $dnsServers = trim($dnsServers);
+        if ($dnsServers === '') {
+            $dnsServers = '1.1.1.1, 1.0.0.1';
+        }
         $config = "[Interface]\n";
         $config .= "Address = {$clientIP}/32\n";
-        $config .= "DNS = 1.1.1.1, 1.0.0.1\n";
+        $config .= "DNS = {$dnsServers}\n";
         $config .= "PrivateKey = {$privateKey}\n";
 
         $usesAwgParams = in_array($protocolSlug, ['amnezia-wg', 'amnezia-wg-advanced', 'awg2'], true);
@@ -2152,7 +2159,8 @@ class VpnClient
                 $endpointHost,
                 (int) ($serverData['vpn_port'] ?? 0),
                 $awgParams,
-                $configSlug
+                $configSlug,
+                (string) ($serverData['dns_servers'] ?? '1.1.1.1, 1.0.0.1')
             );
         }
 
