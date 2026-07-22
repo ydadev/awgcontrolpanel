@@ -1,5 +1,7 @@
 <?php
 class Auth {
+  private static ?string $lastLoginFailure = null;
+
   public static function register(string $name, string $email, string $password): bool {
     $pdo = DB::conn();
     $email = strtolower(trim($email));
@@ -16,6 +18,13 @@ class Auth {
   public static function login(string $email, string $password): bool {
     $pdo = DB::conn();
     $email = strtolower(trim($email));
+    $clientIp = LoginRateLimiter::clientIp();
+    self::$lastLoginFailure = null;
+
+    if (LoginRateLimiter::isBlocked($email, $clientIp)) {
+      self::$lastLoginFailure = 'rate_limited';
+      return false;
+    }
     
     // Try LDAP authentication first if enabled
     $ldap = new LdapSync();
@@ -33,7 +42,10 @@ class Auth {
           $stmt = $pdo->prepare('INSERT INTO users (email, password_hash, name, role, status, ldap_synced, ldap_dn) VALUES (?, \'\', ?, ?, ?, 1, ?)');
           $stmt->execute([$ldapUser['email'], $ldapUser['display_name'], $ldapUser['role'], $status, $ldapUser['ldap_dn']]);
           $userId = (int)$pdo->lastInsertId();
-          if ($status !== 'active') return false;
+          if ($status !== 'active') {
+            self::$lastLoginFailure = 'site_access_disabled';
+            return false;
+          }
         } else {
           $userId = (int)$user['id'];
           // Update user info from LDAP
@@ -41,9 +53,13 @@ class Auth {
           $stmt->execute([$ldapUser['email'], $ldapUser['display_name'], $ldapUser['role'], $userId]);
 
           $user['role'] = $ldapUser['role'];
-          if (!self::canAccessSite($user)) return false;
+          if (!self::canAccessSite($user)) {
+            self::$lastLoginFailure = 'site_access_disabled';
+            return false;
+          }
         }
-        
+
+        LoginRateLimiter::clearSuccessfulLogin($email, $clientIp);
         $_SESSION['user_id'] = $userId;
         return true;
       }
@@ -53,9 +69,14 @@ class Auth {
     $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
     $stmt->execute([$email]);
     $user = $stmt->fetch();
-    if (!$user) return false;
-    if (!password_verify($password, $user['password_hash'])) return false;
-    if (!self::canAccessSite($user)) return false;
+    if (!$user || !password_verify($password, $user['password_hash'])) {
+      return self::rejectInvalidLogin($email, $clientIp);
+    }
+    if (!self::canAccessSite($user)) {
+      self::$lastLoginFailure = 'site_access_disabled';
+      return false;
+    }
+    LoginRateLimiter::clearSuccessfulLogin($email, $clientIp);
     $_SESSION['user_id'] = (int)$user['id'];
     $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?')->execute([$user['id']]);
     return true;
@@ -63,6 +84,22 @@ class Auth {
 
   public static function logout(): void { unset($_SESSION['user_id']); }
   public static function check(): bool { return self::user() !== null; }
+
+  public static function lastLoginFailure(): ?string {
+    return self::$lastLoginFailure;
+  }
+
+  public static function loginRetryAfter(string $email): int {
+    return LoginRateLimiter::secondsUntilAllowed($email, LoginRateLimiter::clientIp());
+  }
+
+  private static function rejectInvalidLogin(string $email, string $clientIp): bool {
+    LoginRateLimiter::recordFailure($email, $clientIp);
+    self::$lastLoginFailure = LoginRateLimiter::isBlocked($email, $clientIp)
+      ? 'rate_limited'
+      : 'invalid_credentials';
+    return false;
+  }
 
   public static function getUserByEmail(string $email): ?array {
     $pdo = DB::conn();

@@ -17,6 +17,7 @@ session_start();
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../inc/Config.php';
 require_once __DIR__ . '/../inc/DB.php';
+require_once __DIR__ . '/../inc/LoginRateLimiter.php';
 require_once __DIR__ . '/../inc/Auth.php';
 require_once __DIR__ . '/../inc/Branding.php';
 require_once __DIR__ . '/../inc/Router.php';
@@ -326,6 +327,14 @@ Router::post('/login', function () {
 
     if (Auth::login($email, $password)) {
         redirect('/dashboard');
+    }
+
+    if (Auth::lastLoginFailure() === 'rate_limited') {
+        $retryAfter = max(1, Auth::loginRetryAfter($email));
+        http_response_code(429);
+        header('Retry-After: ' . $retryAfter);
+        View::render('login.twig', ['error' => 'Too many failed sign-in attempts. Try again in one hour.']);
+        return;
     }
 
     View::render('login.twig', ['error' => 'Invalid credentials']);
@@ -1895,12 +1904,17 @@ Router::post('/api/auth/token', function () {
         return;
     }
 
-    $user = Auth::getUserByEmail($email);
-    if (!$user || !password_verify($password, $user['password_hash'])) {
-        http_response_code(401);
-        echo json_encode(['error' => 'Invalid credentials']);
+    if (!Auth::login($email, $password)) {
+        $rateLimited = Auth::lastLoginFailure() === 'rate_limited';
+        http_response_code($rateLimited ? 429 : 401);
+        if ($rateLimited) {
+            header('Retry-After: ' . max(1, Auth::loginRetryAfter($email)));
+        }
+        echo json_encode(['error' => $rateLimited ? 'Too many failed sign-in attempts' : 'Invalid credentials']);
         return;
     }
+
+    $user = Auth::user();
 
     try {
         $token = JWT::generate($user['id']);
