@@ -141,18 +141,72 @@ class Branding {
             throw new RuntimeException('Logo must be a valid image');
         }
 
+        $svgContent = null;
+        if ($mime === 'image/svg+xml') {
+            $rawSvg = @file_get_contents($tmpName);
+            if (!is_string($rawSvg) || $rawSvg === '') {
+                throw new RuntimeException('Cannot read uploaded SVG logo');
+            }
+            $svgContent = self::sanitizeSvg($rawSvg);
+        }
+
         $uploadDir = dirname(__DIR__) . '/public/uploads/branding';
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
             throw new RuntimeException('Cannot create logo upload directory');
+        }
+        if (!is_writable($uploadDir)) {
+            throw new RuntimeException('Logo upload directory is not writable');
         }
 
         $filename = 'logo-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
         $target = $uploadDir . '/' . $filename;
-        if (!move_uploaded_file($tmpName, $target)) {
+        $saved = $svgContent !== null
+            ? @file_put_contents($target, $svgContent, LOCK_EX) !== false
+            : @move_uploaded_file($tmpName, $target);
+        if (!$saved) {
             throw new RuntimeException('Cannot save uploaded logo');
         }
+        @chmod($target, 0644);
 
         return '/uploads/branding/' . $filename;
+    }
+
+    private static function sanitizeSvg(string $svg): string {
+        if (strpos($svg, "\0") !== false || stripos($svg, '<!ENTITY') !== false) {
+            throw new RuntimeException('SVG logo contains unsupported content');
+        }
+
+        $svg = preg_replace('/<!DOCTYPE[^>]*(?:\[[\s\S]*?\]\s*)?>/i', '', $svg);
+        if (!is_string($svg) || !preg_match('/<svg\b/i', $svg)) {
+            throw new RuntimeException('Logo must be a valid SVG image');
+        }
+
+        $dangerousPatterns = [
+            '/<\s*(?:script|foreignObject|iframe|object|embed)\b/i',
+            '/<\?xml-stylesheet\b/i',
+            '/\son[a-z0-9_-]+\s*=/i',
+            '/(?:javascript|vbscript)\s*:/i',
+            '/\b(?:href|xlink:href)\s*=\s*([\'"])\s*(?:https?:|\/\/)/i',
+            '/url\s*\(\s*[\'"]?\s*(?:https?:|\/\/|javascript:|data:text\/html)/i',
+        ];
+        foreach ($dangerousPatterns as $pattern) {
+            if (preg_match($pattern, $svg)) {
+                throw new RuntimeException('SVG logo contains unsafe content');
+            }
+        }
+
+        if (class_exists('DOMDocument')) {
+            $previous = libxml_use_internal_errors(true);
+            $document = new DOMDocument();
+            $valid = $document->loadXML($svg, LIBXML_NONET);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+            if (!$valid || !$document->documentElement || strtolower($document->documentElement->localName) !== 'svg') {
+                throw new RuntimeException('Logo must be a valid SVG image');
+            }
+        }
+
+        return trim($svg) . "\n";
     }
 
     private static function limitString(string $value, int $maxLength): string {
