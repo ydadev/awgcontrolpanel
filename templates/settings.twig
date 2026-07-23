@@ -435,7 +435,7 @@
                         <div class="flex items-center">
                             <div class="gradient-bg px-4 py-3 rounded-md text-white flex items-center min-w-64">
                                 {% if branding.logo_url %}
-                                <img src="{{ branding.logo_url }}" alt="{{ app_name }}" class="h-8 w-8 object-contain mr-2">
+                                <img src="{{ branding.logo_url }}" alt="{{ app_name }}" class="brand-logo-preview">
                                 {% else %}
                                 <i class="{{ branding.logo_icon|default('fas fa-shield-alt') }} text-white text-2xl mr-2"></i>
                                 {% endif %}
