@@ -8,7 +8,7 @@ class Branding {
         return [
             'app_name' => $appName ?: Config::get('APP_NAME', 'AWG Control Panel'),
             'logo_icon' => 'fas fa-shield-alt',
-            'logo_url' => '',
+            'logo_url' => '/assets/branding/duck-barrier-colored-complete.svg',
             'primary_color' => '#6d28d9',
             'secondary_color' => '#4f46e5',
             'login_subtitle' => 'Sign in to manage your VPN servers',
