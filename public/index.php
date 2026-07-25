@@ -162,6 +162,7 @@ function listConnectionOwnerOptions(int $serverId, array $currentUser): array
     }
 
     $pdo = DB::conn();
+    // Site access controls login only; admins can provision for users who cannot log in.
     $stmt = $pdo->prepare('
         SELECT
             u.id,
@@ -179,7 +180,6 @@ function listConnectionOwnerOptions(int $serverId, array $currentUser): array
             ON usa.user_id = u.id
             AND usa.server_id = ?
             AND usa.can_view = 1
-        WHERE u.status = \'active\'
         ORDER BY CASE WHEN u.role = \'admin\' THEN 0 ELSE 1 END, u.email ASC
     ');
     $stmt->execute([$serverId]);
@@ -197,6 +197,7 @@ function resolveConnectionOwnerForCreateById(array $currentUser, int $serverId, 
     }
 
     $pdo = DB::conn();
+    // Do not reject a target whose web login is disabled.
     $stmt = $pdo->prepare('
         SELECT
             u.*,
@@ -210,14 +211,14 @@ function resolveConnectionOwnerForCreateById(array $currentUser, int $serverId, 
             ON usa.user_id = u.id
             AND usa.server_id = ?
             AND usa.can_view = 1
-        WHERE u.id = ? AND u.status = \'active\'
+        WHERE u.id = ?
         LIMIT 1
     ');
     $stmt->execute([$serverId, $targetUserId]);
     $owner = $stmt->fetch();
 
     if (!$owner) {
-        throw new Exception('Selected user was not found or is inactive');
+        throw new Exception('Selected user was not found');
     }
 
     if (($owner['role'] ?? '') !== 'admin' && (int) ($owner['has_server_access'] ?? 0) !== 1) {
