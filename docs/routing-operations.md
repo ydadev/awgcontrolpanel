@@ -27,6 +27,8 @@ Use `scripts/awg2-userspace-entrypoint.sh` as the container entrypoint. It avoid
 
 Install `scripts/awg2-host-mss.sh` as a host-level systemd oneshot instead of applying TCP MSS rules from the container image. This keeps host firewall behavior independent of the image's `iptables` implementation and restores the SYN-only MSS chain at boot without granting the container host PID access or `SYS_ADMIN`.
 
+After copying these helpers to a node, run `chmod 0755` on both scripts before using them as a container entrypoint or a systemd `ExecStart`.
+
 The entrypoint requires `AWG_ADDRESS`. Optional variables are `AWG_INTERFACE`, `AWG_CONFIG_DIR`, `AWG_SETCONF_FILE`, `AWG_UP_SCRIPT`, `AWG_DOWN_SCRIPT`, `AWG_READY_FILE`, and `AWG_MTU`. Keep private keys, preshared keys, endpoint addresses, route lists, and generated configuration outside Git.
 
 Before switching production routes, verify all of the following:
