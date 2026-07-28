@@ -29,7 +29,7 @@
 
     <!-- Tabs -->
     <div class="mb-6 border-b border-gray-200">
-        <nav class="-mb-px flex space-x-8">
+        <nav class="-mb-px flex space-x-8 overflow-x-auto">
             <a href="#" onclick="showTab('profile'); return false;" id="tab-profile" 
                class="tab-link border-purple-500 text-purple-600 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-user mr-2"></i>{{ t('settings.profile') }}
@@ -54,6 +54,10 @@
             <a href="#" onclick="showTab('branding'); return false;" id="tab-branding"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-palette mr-2"></i>Branding
+            </a>
+            <a href="#" onclick="showTab('two-factor'); return false;" id="tab-two-factor"
+               class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap">
+                <i class="fas fa-shield-alt mr-2"></i>2FA
             </a>
             <a href="#" onclick="showTab('ldap'); return false;" id="tab-ldap"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
@@ -262,211 +266,58 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('users.role') }}</label>
                             <select name="role" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
-                                <option value="user">{{ t('users.role_user') }}</option>
-                                <option value="admin">{{ t('users.role_admin') }}</option>
-                            </select>
+                                <option value="user">{{ t('users.role_user…5870 tokens truncated… в зашифрованном виде.</p>
                         </div>
-                        <div class="flex items-center">
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="site_access" value="1" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                                <span class="ml-2 text-sm text-gray-700">Site access</span>
-                            </label>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Адрес отправителя</label>
+                            <input type="email" name="from_email" value="{{ two_factor_settings.from_email }}" required
+                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Имя отправителя</label>
+                            <input type="text" name="from_name" value="{{ two_factor_settings.from_name }}" required maxlength="100"
+                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
                     </div>
-                    <button type="submit" class="mt-4 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                        <i class="fas fa-user-plus mr-2"></i>{{ t('users.add_user') }}
-                    </button>
+
+                    <div class="mt-6 flex flex-wrap items-end gap-3">
+                        <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                            <i class="fas fa-save mr-2"></i>Сохранить
+                        </button>
+                        {% if two_factor_settings.verified_at %}
+                        <span class="text-sm text-green-700">
+                            <i class="fas fa-check-circle mr-1"></i>SMTP проверен: {{ two_factor_settings.verified_at }}
+                        </span>
+                        {% endif %}
+                    </div>
                 </form>
-            </div>
-        </div>
 
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-6 py-5 border-b border-gray-200">
-                <h2 class="text-lg font-medium text-gray-900">
-                    <i class="fas fa-users mr-2 text-purple-600"></i>{{ t('users.all_users') }}
-                </h2>
-            </div>
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.name') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.email') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('users.role') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site access</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Server access</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('users.created') }}</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('settings.actions') }}</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for u in users %}
-                    <tr>
-                        <td class="px-6 py-4">
-                            <div class="flex items-center">
-                                <i class="fas fa-user-circle text-gray-400 text-lg mr-2"></i>
-                                <span class="text-sm font-medium">{{ u.name }}</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-500">{{ u.email }}</td>
-                        <td class="px-6 py-4">
-                            {% if u.role == 'admin' %}
-                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ t('users.role_admin') }}</span>
-                            {% else %}
-                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{ t('users.role_user') }}</span>
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 text-sm">
-                            {% if u.role == 'admin' %}
-                            <label class="inline-flex items-center text-gray-500" title="Administrators always have access">
-                                <input type="checkbox" checked disabled class="rounded border-gray-300 text-purple-600">
-                                <span class="ml-2">Enabled</span>
+                <form method="POST" action="/settings/two-factor/test" class="max-w-3xl mt-8 pt-6 border-t border-gray-200">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="smtp_host" value="{{ two_factor_settings.smtp_host }}">
+                    <input type="hidden" name="smtp_port" value="{{ two_factor_settings.smtp_port|default(465) }}">
+                    <input type="hidden" name="smtp_encryption" value="{{ two_factor_settings.smtp_encryption|default('ssl') }}">
+                    <input type="hidden" name="smtp_username" value="{{ two_factor_settings.smtp_username }}">
+                    <input type="hidden" name="from_email" value="{{ two_factor_settings.from_email }}">
+                    <input type="hidden" name="from_name" value="{{ two_factor_settings.from_name }}">
+                    <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Получатель тестового письма</label>
+                            <input type="email" name="test_recipient" value="{{ two_factor_test_recipient }}" required
+                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                SMTP-пароль {% if two_factor_settings.has_password %}(можно оставить пустым){% endif %}
                             </label>
-                            {% else %}
-                            <form method="POST" action="/settings/users/{{ u.id }}/site-access" class="inline-flex">
-                                <input type="hidden" name="site_access" value="0">
-                                <label class="inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" name="site_access" value="1"
-                                           class="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                                           {% if u.status == 'active' %}checked{% endif %}
-                                           onchange="this.form.submit()">
-                                    <span class="ml-2 {% if u.status == 'active' %}text-green-700{% else %}text-gray-500{% endif %}">
-                                        {{ u.status == 'active' ? 'Enabled' : 'Disabled' }}
-                                    </span>
-                                </label>
-                            </form>
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 text-sm">
-                            {% if u.role == 'admin' %}
-                            <span class="text-gray-500">Full access by role</span>
-                            {% elseif all_servers|length > 0 %}
-                            <form method="POST" action="/settings/users/{{ u.id }}/server-access" class="space-y-3">
-                                <div class="space-y-2">
-                                    {% for server in all_servers %}
-                                    {% set access = user_server_access[u.id][server.id]|default(null) %}
-                                    <div class="border rounded p-2">
-                                        <div class="font-medium text-gray-900">{{ server.name }}</div>
-                                        <div class="text-xs text-gray-500 mb-2">{{ server.host }}</div>
-                                        <label class="inline-flex items-center mr-4">
-                                            <input type="checkbox" name="server_ids[]" value="{{ server.id }}" class="rounded border-gray-300 text-purple-600" {% if access %}checked{% endif %}>
-                                            <span class="ml-2">Access</span>
-                                        </label>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="create_client_server_ids[]" value="{{ server.id }}" class="rounded border-gray-300 text-purple-600" {% if access and access.can_create_clients %}checked{% endif %}>
-                                            <span class="ml-2">Create configs</span>
-                                        </label>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                                <p class="text-xs text-amber-700">Removing access disables active configs for that user on the server.</p>
-                                <button type="submit" class="px-3 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700">
-                                    <i class="fas fa-save mr-1"></i>{{ t('form.save') }}
-                                </button>
-                            </form>
-                            {% else %}
-                            <span class="text-gray-500">No servers yet</span>
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-500">{{ u.created_at|date('Y-m-d') }}</td>
-                        <td class="px-6 py-4 text-sm">
-                            {% if u.id != user.id %}
-                            <form method="POST" action="/settings/users/{{ u.id }}/password" class="mb-3 space-y-2">
-                                <label class="block text-xs font-medium text-gray-700">Set password</label>
-                                <input type="password" name="new_password" required minlength="6" placeholder="New password"
-                                       class="block w-48 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-purple-500 focus:border-purple-500">
-                                <input type="password" name="confirm_password" required minlength="6" placeholder="Confirm password"
-                                       class="block w-48 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-purple-500 focus:border-purple-500">
-                                <button type="submit" class="text-purple-600 hover:text-purple-900 text-xs">
-                                    <i class="fas fa-key mr-1"></i> Update password
-                                </button>
-                            </form>
-                            <form method="POST" action="/settings/delete-user/{{ u.id }}" class="inline" onsubmit="return confirm('{{ t('users.delete_confirm', [u.name]) }}')">
-                                <button type="submit" class="text-red-600 hover:text-red-900">
-                                    <i class="fas fa-trash"></i> {{ t('clients.delete') }}
-                                </button>
-                            </form>
-                            {% else %}
-                            <!-- For the current user show a Change Password action in Actions column -->
-                            <a href="#" id="self-change-password" onclick="showTab('profile'); return false;" class="text-purple-600 hover:text-purple-900">
-                                <i class="fas fa-key mr-1"></i> {{ t('settings.change_password') }}
-                            </a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Branding Tab -->
-    <div id="content-branding" class="tab-content hidden">
-        <div class="bg-white shadow rounded-lg">
-            <div class="px-6 py-5 border-b border-gray-200">
-                <h2 class="text-lg font-medium text-gray-900">
-                    <i class="fas fa-palette mr-2 text-purple-600"></i>Branding
-                </h2>
-            </div>
-            <div class="px-6 py-5">
-                <form method="POST" action="/settings/branding" enctype="multipart/form-data">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Panel name</label>
-                            <input type="text" name="app_name" value="{{ branding.app_name|default(app_name) }}" required maxlength="80"
+                            <input type="password" name="smtp_password" autocomplete="new-password"
                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Logo icon class</label>
-                            <input type="text" name="logo_icon" value="{{ branding.logo_icon|default('fas fa-shield-alt') }}" maxlength="80"
-                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
-                            <p class="mt-1 text-xs text-gray-500">Example: fas fa-shield-alt, fas fa-network-wired</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Logo image</label>
-                            <input type="file" name="logo_file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
-                                   class="block w-full text-sm text-gray-700">
-                            {% if branding.logo_url %}
-                            <label class="mt-3 inline-flex items-center">
-                                <input type="checkbox" name="remove_logo" value="1" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                                <span class="ml-2 text-sm text-gray-600">Remove uploaded logo and use icon</span>
-                            </label>
-                            {% endif %}
-                        </div>
-                        <div class="flex items-center">
-                            <div class="gradient-bg px-4 py-3 rounded-md text-white flex items-center min-w-64">
-                                {% if branding.logo_url %}
-                                <img src="{{ branding.logo_url }}" alt="{{ app_name }}" class="brand-logo-preview">
-                                {% else %}
-                                <i class="{{ branding.logo_icon|default('fas fa-shield-alt') }} text-white text-2xl mr-2"></i>
-                                {% endif %}
-                                <span class="text-lg font-bold">{{ branding.app_name|default(app_name) }}</span>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Primary color</label>
-                            <input type="color" name="primary_color" value="{{ branding.primary_color|default('#6d28d9') }}"
-                                   class="h-10 w-20 border border-gray-300 rounded">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Secondary color</label>
-                            <input type="color" name="secondary_color" value="{{ branding.secondary_color|default('#4f46e5') }}"
-                                   class="h-10 w-20 border border-gray-300 rounded">
-                        </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Login subtitle</label>
-                            <input type="text" name="login_subtitle" value="{{ branding.login_subtitle|default('Sign in to manage your VPN servers') }}" maxlength="160"
-                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
-                        </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Footer text</label>
-                            <input type="text" name="footer_text" value="{{ branding.footer_text|default('Open Source VPN Management Panel') }}" maxlength="160"
-                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
-                            <p class="mt-1 text-xs text-gray-500">The current year is added automatically.</p>
-                        </div>
+                        <button type="submit" class="px-4 py-2 border border-purple-600 text-purple-700 rounded-md hover:bg-purple-50 whitespace-nowrap">
+                            <i class="fas fa-paper-plane mr-2"></i>Отправить тест
+                        </button>
                     </div>
-                    <button type="submit" class="mt-6 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                        <i class="fas fa-save mr-2"></i>{{ t('form.save') }}
-                    </button>
+                    <p class="mt-2 text-xs text-gray-500">Сначала сохраните адреса и порт либо заполните их выше и нажмите «Сохранить». Для включения 2FA требуется успешный тест.</p>
                 </form>
             </div>
         </div>
