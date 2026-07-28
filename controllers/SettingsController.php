@@ -16,6 +16,7 @@ class SettingsController {
         $userServerAccess = UserServerAccess::mapForUsers();
         $apiKey = $this->getApiKey('openrouter');
         $branding = Branding::get(Config::get('APP_NAME', 'AWG Control Panel'));
+        $twoFactorSettings = EmailTwoFactorSettings::forForm();
 
         // LDAP data for embedded tab
         $stmt = $this->pdo->query("SELECT * FROM ldap_configs WHERE id = 1");
@@ -52,6 +53,8 @@ class SettingsController {
             'user_server_access' => $userServerAccess,
             'openrouter_key' => $apiKey,
             'branding' => $branding,
+            'two_factor_settings' => $twoFactorSettings,
+            'two_factor_test_recipient' => Auth::user()['email'] ?? '',
             // LDAP
             'config' => $config,
             'mappings' => $mappings,
@@ -290,6 +293,56 @@ class SettingsController {
         }
 
         header('Location: /settings#branding');
+        exit;
+    }
+
+    public function saveEmailTwoFactor() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /settings#two-factor');
+            exit;
+        }
+        if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+            $_SESSION['settings_error'] = 'The form session expired. Reload the page and try again.';
+            header('Location: /settings#two-factor');
+            exit;
+        }
+
+        try {
+            EmailTwoFactorSettings::saveFromInput($_POST);
+            $_SESSION['settings_success'] = !empty($_POST['enabled'])
+                ? 'Email two-factor authentication enabled'
+                : 'Email two-factor authentication settings saved';
+        } catch (Throwable $e) {
+            $_SESSION['settings_error'] = 'Failed to save two-factor settings: ' . $e->getMessage();
+        }
+
+        header('Location: /settings#two-factor');
+        exit;
+    }
+
+    public function testEmailTwoFactor() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /settings#two-factor');
+            exit;
+        }
+        if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+            $_SESSION['settings_error'] = 'The form session expired. Reload the page and try again.';
+            header('Location: /settings#two-factor');
+            exit;
+        }
+
+        try {
+            EmailTwoFactorSettings::testAndSave(
+                $_POST,
+                (string) ($_POST['test_recipient'] ?? '')
+            );
+            $_SESSION['settings_success'] = 'Test email sent. SMTP settings were saved and can now be enabled.';
+        } catch (Throwable $e) {
+            error_log('SMTP settings test failed: ' . $e->getMessage());
+            $_SESSION['settings_error'] = 'SMTP test failed: ' . $e->getMessage();
+        }
+
+        header('Location: /settings#two-factor');
         exit;
     }
 
