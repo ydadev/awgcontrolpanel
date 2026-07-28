@@ -39,6 +39,7 @@ Important changes in this copy:
 - Multi-language interface (English, Russian, Spanish, German, French, Chinese)
 - REST API with JWT authentication
 - User authentication, roles, and per-user server access control
+- Optional email two-factor authentication for all web-panel users, with encrypted SMTP credentials and rate-limited six-digit codes
 - **Automatic client expiration and traffic limit checks** via cron
 
 ## Available Protocols
@@ -133,7 +134,13 @@ ADMIN_EMAIL=admin@example.test
 ADMIN_PASSWORD=replace-with-random-admin-password
 
 JWT_SECRET=replace-with-at-least-32-random-characters
+SETTINGS_ENCRYPTION_KEY=replace-with-at-least-32-random-characters
 ```
+
+Email two-factor authentication is configured by an administrator in
+`Settings -> 2FA`. Send a successful test message before enabling it. See
+[`docs/email-two-factor-auth.md`](docs/email-two-factor-auth.md) for deployment
+and recovery details.
 
 ## Usage
 
