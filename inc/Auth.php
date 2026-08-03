@@ -165,10 +165,7 @@ class Auth {
     if (!$user || !self::canAccessSite($user)) return false;
     if (($user['role'] ?? '') === 'admin') return true;
 
-    $userPermissions = [
-      'routing.view',
-      'routing.manage_own_routes',
-    ];
+    $userPermissions = [];
 
     return in_array($permission, $userPermissions, true);
   }

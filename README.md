@@ -21,7 +21,7 @@ Important changes in this copy:
   - AmneziaWG/AWG2 clients get an AmneziaWG app-compatible WireGuard-style config QR and text block.
 - Regular users no longer manage VPN servers directly. Administrators assign server access per user and can separately allow users to create their own connection configs; removing server access disables that user's active configs on that server.
 - VPN "clients" in the original codebase are treated in this fork as connection records. Each connection belongs to a system user; administrators choose the owner when creating a connection, while regular users can only create connections for their own account when allowed.
-- Phase 1 of the individual routing subsystem has been started: routing schema, RBAC hooks, admin/user UI entry points, routing user groups, revision builder, outbox worker scaffolding, Redis service, and routing documentation were added without changing the current VPN data plane. If a user is assigned to a routing group, group routing permissions take priority and individual route editing is disabled for that user.
+- Routing is now managed as shared destination lists for the system `default` group. Every existing and new user belongs to this group; regular users do not edit routes. Administrators edit the `kazan1 -> vienna2` and `kazan1 -> office1` IPv4 CIDR lists in the Routing screen and save/apply them directly to the source node.
 
 ## Features
 

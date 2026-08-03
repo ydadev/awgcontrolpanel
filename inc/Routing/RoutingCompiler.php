@@ -4,47 +4,72 @@ class RoutingCompiler
 {
     public static function compileServerPolicies(int $serverId): array
     {
-        $pdo = DB::conn();
-        $stmt = $pdo->prepare('
-            SELECT
-                r.id,
-                COALESCE(e.canonical_cidr, r.destination_cidr) AS destination_cidr,
-                r.action,
-                r.server_link_id,
-                r.priority,
-                r.is_locked,
-                r.target_type,
-                r.ip_list_id,
-                a.subject_type,
-                a.user_id,
-                a.group_id,
-                a.client_id
-            FROM routing_rules r
-            JOIN routing_profiles p ON p.id = r.profile_id
-            LEFT JOIN routing_profile_assignments a ON a.profile_id = p.id
-            LEFT JOIN routing_ingresses i ON i.id = a.ingress_id
-            LEFT JOIN routing_ip_list_entries e ON e.ip_list_id = r.ip_list_id AND r.target_type = "ip_list"
-            WHERE r.enabled = 1
-              AND p.enabled = 1
-              AND (i.server_id = ? OR a.ingress_id IS NULL)
-              AND (r.target_type <> "ip_list" OR e.id IS NOT NULL)
-            ORDER BY r.is_locked DESC, r.priority ASC, r.id ASC
-        ');
+        $stmt = DB::conn()->prepare(
+            'SELECT
+                target.id AS route_target_id,
+                target.target_key,
+                target.name,
+                target.egress_name,
+                target.transport_label,
+                target.route_interface_name,
+                target.apply_strategy,
+                target.server_link_id,
+                target.priority,
+                routing_group.id AS group_id,
+                routing_group.name AS group_name,
+                entry.canonical_cidr AS destination_cidr
+             FROM routing_route_targets target
+             JOIN routing_user_groups routing_group ON routing_group.id = target.group_id
+             JOIN routing_ingresses ingress ON ingress.id = target.ingress_id
+             JOIN routing_ip_list_entries entry ON entry.ip_list_id = target.ip_list_id
+             WHERE ingress.server_id = ?
+               AND target.enabled = 1
+               AND routing_group.enabled = 1
+             ORDER BY target.priority, target.id, entry.id'
+        );
         $stmt->execute([$serverId]);
-        $rules = [];
-        foreach ($stmt->fetchAll() as $rule) {
-            if (!empty($rule['destination_cidr'])) {
-                $normalized = RoutingValidator::normalizeIpv4Cidr($rule['destination_cidr']);
-                $rule['destination_cidr'] = $normalized['canonical_cidr'];
+
+        $policies = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $targetId = (int) $row['route_target_id'];
+            if (!isset($policies[$targetId])) {
+                $policies[$targetId] = [
+                    'policy_id' => $row['target_key'],
+                    'route_target_id' => $targetId,
+                    'name' => $row['name'],
+                    'group_id' => (int) $row['group_id'],
+                    'group_name' => $row['group_name'],
+                    'egress_name' => $row['egress_name'],
+                    'transport_label' => $row['transport_label'],
+                    'route_interface_name' => $row['route_interface_name'],
+                    'apply_strategy' => $row['apply_strategy'],
+                    'server_link_id' => $row['server_link_id'] !== null
+                        ? (int) $row['server_link_id']
+                        : null,
+                    'priority' => (int) $row['priority'],
+                    'rules' => [],
+                ];
             }
-            $rules[] = $rule;
+            $policies[$targetId]['rules'][] = [
+                'destination_cidr' => RoutingValidator::normalizeIpv4Cidr(
+                    $row['destination_cidr']
+                )['canonical_cidr'],
+                'action' => 'egress',
+                'route_interface_name' => $row['route_interface_name'],
+                'server_link_id' => $row['server_link_id'] !== null
+                    ? (int) $row['server_link_id']
+                    : null,
+            ];
         }
 
-        $policyHash = hash('sha256', json_encode($rules, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        return [[
-            'policy_id' => substr($policyHash, 0, 16),
-            'hash' => $policyHash,
-            'rules' => $rules,
-        ]];
+        foreach ($policies as &$policy) {
+            $policy['hash'] = hash(
+                'sha256',
+                json_encode($policy['rules'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            );
+        }
+        unset($policy);
+
+        return array_values($policies);
     }
 }

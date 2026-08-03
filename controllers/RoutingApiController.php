@@ -6,7 +6,7 @@ class RoutingApiController
     {
         header('Content-Type: application/json');
         $user = authenticateRequest();
-        if (!$user || !Auth::can('routing.view', $user)) {
+        if (!$user || ($user['role'] ?? '') !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;

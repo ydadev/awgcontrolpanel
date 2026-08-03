@@ -1,25 +1,23 @@
 # Routing Testing
 
-Phase 1 test scope:
+Required control-plane checks:
 
-- migrations apply cleanly on MySQL 8.0;
-- PHP syntax checks pass;
-- admin cannot be bypassed for `/routing`;
-- users can only open `/my/routes`;
-- IPv4 CIDR normalization works;
-- IPv6 is rejected;
-- protected IPv4 ranges are rejected for user routes;
-- outbox events create config revisions;
-- generated revision JSON has a stable SHA-256 hash.
+- migration `085` applies twice without changing the result;
+- only `default` remains and its member count equals the user count;
+- new users are assigned to `default`;
+- legacy profiles, personal lists, permissions, pending revisions, and delivery jobs are removed or superseded;
+- PHP, Twig, and generated shell syntax checks pass;
+- regular users cannot open route management or the routing status API;
+- IPv4 CIDRs normalize and deduplicate correctly, while empty/invalid/IPv6 lists are rejected;
+- stale expected hashes and concurrent apply locks are enforced;
+- desired/applied hashes and statuses change correctly on success and failure.
 
-Production data-plane testing still required:
+Required data-plane checks for each target:
 
-- nftables check and atomic apply;
-- DIRECT, EGRESS and BLOCK behavior;
-- no ingress SNAT for remote egress;
-- egress NAT only on final exit;
-- conntrack stickiness;
-- fail-closed blackhole route;
-- reboot recovery;
-- rollback after apply failure;
-- 1,000 clients and 50,000 compiled intervals.
+- persistent list count/hash;
+- live kernel route count and representative route lookups;
+- tunnel/interface and handshake health;
+- forwarding/NAT counters;
+- client DNS, office access, domestic/direct traffic, overseas egress, HTTPS, packet loss, and MTU behavior;
+- route recovery after tunnel/container and source-node restart;
+- restoration from the pre-change database and route/config backups.

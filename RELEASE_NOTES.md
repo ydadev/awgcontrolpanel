@@ -1,3 +1,16 @@
+# Unreleased - 2026-07-28
+
+## Shared routing
+
+- Replaced user-specific routing profiles and permissions with a shared `default` group.
+- Added automatic `default` membership for all existing and newly created users.
+- Added editable IPv4 CIDR lists for `kazan1 -> vienna2` and `kazan1 -> office1`.
+- Added synchronous save/apply with optimistic edit checks, server-side validation, audit records, applied hashes, and failure status.
+- Disabled legacy asynchronous routing revision generation in shared-route mode.
+- Removed regular-user route management and the legacy route creation endpoints.
+
+---
+
 # awgcontrolpanel v0.2.0
 
 **Release Date:** 2026-07-20

@@ -43,7 +43,7 @@ Future routing goal:
 - Russian resources go through a Russian VPN node;
 - all other resources go through an overseas VPN node.
 
-The safe control-plane foundation for this routing is implemented as phase 1. It stores desired routing state, permissions, user groups, and revisions, but it does not yet change the live VPN packet path until the routing agent/data-plane phase is completed.
+Routing is managed through shared destination lists attached to the system `default` group. The panel applies these lists directly to the configured egress interfaces on the source VPN node and records the resulting hash and revision.
 
 ## Security Decisions
 
@@ -90,8 +90,9 @@ Current application changes tested on 2026-07-10:
 - regular users no longer add or manage servers directly; administrators assign access to specific servers and may separately allow users to create their own connection configs.
 - VPN client records are treated as user-owned connections; administrators choose the connection owner during creation, while regular users can only create connections for their own account when allowed.
 - removing a user's access to a server revokes/blocks that user's active client configs on that server.
-- phase 1 of the individual routing subsystem is in progress: schema, routing UI/API scaffolding, routing user groups, CIDR validation, outbox/revision workers, Redis service, agent documentation, and rollback notes are present; the existing VPN data plane is not changed by this phase.
-- routing groups are mutually exclusive per user. When a user belongs to a routing group, group link permissions and limits apply, and individual route-list creation is blocked in the user panel.
+- routing is shared rather than user-specific: all existing and new users are members of the system `default` group;
+- administrators edit and directly apply the two current route destinations, `kazan1 -> vienna2` and `kazan1 -> office1`, while regular users have no route-management UI;
+- the legacy profile, individual permission, personal list, and asynchronous revision paths are disabled after migration `085`;
 
 Current release target on 2026-07-20:
 

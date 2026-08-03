@@ -7,11 +7,16 @@ class RoutingRepository
         $pdo = DB::conn();
         return [
             'ingresses' => (int) $pdo->query('SELECT COUNT(*) FROM routing_ingresses')->fetchColumn(),
-            'links' => (int) $pdo->query('SELECT COUNT(*) FROM routing_server_links')->fetchColumn(),
-            'ip_lists' => (int) $pdo->query('SELECT COUNT(*) FROM routing_ip_lists')->fetchColumn(),
-            'profiles' => (int) $pdo->query('SELECT COUNT(*) FROM routing_profiles')->fetchColumn(),
-            'groups' => (int) $pdo->query('SELECT COUNT(*) FROM routing_user_groups')->fetchColumn(),
-            'pending_revisions' => (int) $pdo->query('SELECT COUNT(*) FROM routing_config_revisions WHERE status IN ("pending","delivering")')->fetchColumn(),
+            'targets' => (int) $pdo->query('SELECT COUNT(*) FROM routing_route_targets WHERE enabled = 1')->fetchColumn(),
+            'applied_targets' => (int) $pdo->query('SELECT COUNT(*) FROM routing_route_targets WHERE enabled = 1 AND apply_status = "applied"')->fetchColumn(),
+            'failed_targets' => (int) $pdo->query('SELECT COUNT(*) FROM routing_route_targets WHERE enabled = 1 AND apply_status = "failed"')->fetchColumn(),
+            'groups' => (int) $pdo->query('SELECT COUNT(*) FROM routing_user_groups WHERE enabled = 1')->fetchColumn(),
+            'users_in_default' => (int) $pdo->query(
+                'SELECT COUNT(*)
+                 FROM routing_user_group_members member
+                 JOIN routing_user_groups routing_group ON routing_group.id = member.group_id
+                 WHERE routing_group.name = "default"'
+            )->fetchColumn(),
         ];
     }
 

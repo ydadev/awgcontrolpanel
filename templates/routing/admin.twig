@@ -1,196 +1,275 @@
 {% extends "layout.twig" %}
-{% block title %}Маршрутизация{% endblock %}
+{% block title %}Маршруты{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8">
-  <div class="mb-6">
-    <h1 class="text-3xl font-bold">Маршрутизация</h1>
-    <p class="text-gray-600 mt-2">Каркас индивидуальной маршрутизации. Data plane будет включаться после установки routing-agent.</p>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Маршруты</h1>
+      <p class="text-sm text-gray-600 mt-1">Общие направления группы <strong>default</strong></p>
+    </div>
+    <div class="text-sm text-gray-500">
+      {{ stats.applied_targets }} из {{ stats.targets }} направлений применено
+    </div>
   </div>
 
-  {% if 'success=' in current_uri %}
-    <div class="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded">Изменение сохранено.</div>
+  {% if success_message %}
+    <div class="mb-5 border border-green-200 bg-green-50 text-green-800 px-4 py-3 rounded-md">
+      <i class="fas fa-check-circle mr-2"></i>{{ success_message }}
+    </div>
   {% endif %}
-  {% if 'error=' in current_uri %}
-    <div class="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">Ошибка сохранения. Проверьте введённые данные.</div>
+  {% if error_message %}
+    <div class="mb-5 border border-red-200 bg-red-50 text-red-800 px-4 py-3 rounded-md">
+      <i class="fas fa-exclamation-circle mr-2"></i>{{ error_message }}
+    </div>
   {% endif %}
 
-  <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-8">
-    <div class="bg-white rounded shadow p-4"><div class="text-sm text-gray-500">Ingress</div><div class="text-2xl font-bold">{{ stats.ingresses }}</div></div>
-    <div class="bg-white rounded shadow p-4"><div class="text-sm text-gray-500">Links</div><div class="text-2xl font-bold">{{ stats.links }}</div></div>
-    <div class="bg-white rounded shadow p-4"><div class="text-sm text-gray-500">IP lists</div><div class="text-2xl font-bold">{{ stats.ip_lists }}</div></div>
-    <div class="bg-white rounded shadow p-4"><div class="text-sm text-gray-500">Profiles</div><div class="text-2xl font-bold">{{ stats.profiles }}</div></div>
-    <div class="bg-white rounded shadow p-4"><div class="text-sm text-gray-500">Groups</div><div class="text-2xl font-bold">{{ stats.groups }}</div></div>
-    <div class="bg-white rounded shadow p-4"><div class="text-sm text-gray-500">Pending</div><div class="text-2xl font-bold">{{ stats.pending_revisions }}</div></div>
-  </div>
-
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-    <div class="bg-white rounded shadow p-6">
-      <h2 class="font-bold mb-4">Добавить routing ingress</h2>
-      <form method="POST" action="/routing/ingresses" class="space-y-3">
-        <select name="server_protocol_id" class="w-full px-3 py-2 border rounded" required onchange="const opt=this.options[this.selectedIndex]; document.getElementById('routingServerId').value=opt.dataset.server;">
-          <option value="">Выберите установленный протокол</option>
-          {% for p in protocols %}
-            <option value="{{ p.server_protocol_id }}" data-server="{{ p.server_id }}">{{ p.server_name }} / {{ p.protocol_name }}{% if p.routing_enabled %} (routing enabled){% endif %}</option>
-          {% endfor %}
-        </select>
-        <input type="hidden" name="server_id" id="routingServerId">
-        <input name="pool_cidr" class="w-full px-3 py-2 border rounded" placeholder="10.100.1.0/24" required>
-        <input name="interface_name" class="w-full px-3 py-2 border rounded" placeholder="awg-r1" required>
-        <button class="gradient-bg text-white px-4 py-2 rounded w-full">Сохранить ingress</button>
-      </form>
-    </div>
-
-    <div class="bg-white rounded shadow p-6">
-      <h2 class="font-bold mb-4">Создать server link</h2>
-      <form method="POST" action="/routing/links" class="space-y-3">
-        <select name="ingress_id" class="w-full px-3 py-2 border rounded" required>
-          <option value="">Ingress</option>
-          {% for ingress in ingresses %}
-            <option value="{{ ingress.id }}">{{ ingress.server_name }} / {{ ingress.protocol_name }} / {{ ingress.pool_cidr }}</option>
-          {% endfor %}
-        </select>
-        <select name="egress_server_id" class="w-full px-3 py-2 border rounded" required>
-          <option value="">Egress server</option>
-          {% for server in servers %}
-            <option value="{{ server.id }}">{{ server.name }} ({{ server.host }})</option>
-          {% endfor %}
-        </select>
-        <input name="name" class="w-full px-3 py-2 border rounded" placeholder="WG1 -> WG2" required>
-        <input name="endpoint_host" class="w-full px-3 py-2 border rounded" placeholder="egress.example.test">
-        <input name="endpoint_port" type="number" min="1" max="65535" class="w-full px-3 py-2 border rounded" placeholder="51840">
-        <select name="user_access_mode" class="w-full px-3 py-2 border rounded">
-          <option value="admin_only">admin_only</option>
-          <option value="user_allowed">user_allowed</option>
-          <option value="disabled">disabled</option>
-        </select>
-        <button class="gradient-bg text-white px-4 py-2 rounded w-full">Создать link</button>
-      </form>
+  <div class="border-b border-gray-200 mb-6" role="tablist" aria-label="Разделы маршрутизации">
+    <div class="flex gap-6 overflow-x-auto">
+      <button type="button" data-routing-tab="routes"
+              class="routing-tab whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium">
+        <i class="fas fa-route mr-2"></i>Маршруты
+      </button>
+      <button type="button" data-routing-tab="groups"
+              class="routing-tab whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium">
+        <i class="fas fa-users mr-2"></i>Группы
+      </button>
+      <button type="button" data-routing-tab="status"
+              class="routing-tab whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium">
+        <i class="fas fa-server mr-2"></i>Состояние
+      </button>
     </div>
   </div>
 
-  <div class="bg-white rounded shadow p-6 mb-8">
-    <h2 class="font-bold mb-4">IP-списки</h2>
-    <form method="POST" action="/routing/ip-lists" class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-      <input name="name" class="px-3 py-2 border rounded" placeholder="Название списка" required>
-      <select name="scope" class="px-3 py-2 border rounded">
-        <option value="admin">admin</option>
-        <option value="system">system</option>
-      </select>
-      <textarea name="entries" class="px-3 py-2 border rounded md:col-span-3" rows="4" placeholder="1.1.1.0/24&#10;8.8.8.8/32"></textarea>
-      <button class="gradient-bg text-white px-4 py-2 rounded md:col-span-3">Создать список</button>
-    </form>
-    <div class="overflow-x-auto">
-      <table class="w-full">
-        <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Scope</th><th class="px-4 py-2 text-left">Owner</th></tr></thead>
-        <tbody>
-          {% for list in ip_lists %}
-          <tr class="border-t"><td class="px-4 py-2">{{ list.name }}</td><td class="px-4 py-2">{{ list.scope }}</td><td class="px-4 py-2">{{ list.owner_email|default('-') }}</td></tr>
-          {% else %}
-          <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">Списков пока нет</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="bg-white rounded shadow p-6 mb-8">
-    <h2 class="font-bold mb-4">Группы пользователей</h2>
-    <form method="POST" action="/routing/groups" class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-      <input name="name" class="px-3 py-2 border rounded" placeholder="Название группы" required>
-      <input name="description" class="px-3 py-2 border rounded md:col-span-2" placeholder="Описание">
-      <button class="gradient-bg text-white px-4 py-2 rounded md:col-span-3">Создать группу</button>
-    </form>
-
-    <div class="overflow-x-auto mb-6">
-      <table class="w-full">
-        <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Group</th><th class="px-4 py-2 text-left">Members</th><th class="px-4 py-2 text-left">Status</th></tr></thead>
-        <tbody>
-          {% for group in routing_groups %}
-          <tr class="border-t"><td class="px-4 py-2">{{ group.name }}</td><td class="px-4 py-2">{{ group.member_count }}</td><td class="px-4 py-2">{% if group.enabled %}enabled{% else %}disabled{% endif %}</td></tr>
-          {% else %}
-          <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">Групп пока нет</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <section id="routes" data-routing-panel>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div class="bg-white border border-gray-200 rounded-md px-4 py-3">
+        <div class="text-xs uppercase text-gray-500">Направления</div>
+        <div class="text-xl font-semibold mt-1">{{ stats.targets }}</div>
+      </div>
+      <div class="bg-white border border-gray-200 rounded-md px-4 py-3">
+        <div class="text-xs uppercase text-gray-500">Применено</div>
+        <div class="text-xl font-semibold text-green-700 mt-1">{{ stats.applied_targets }}</div>
+      </div>
+      <div class="bg-white border border-gray-200 rounded-md px-4 py-3">
+        <div class="text-xs uppercase text-gray-500">С ошибкой</div>
+        <div class="text-xl font-semibold {% if stats.failed_targets %}text-red-700{% else %}text-gray-900{% endif %} mt-1">{{ stats.failed_targets }}</div>
+      </div>
+      <div class="bg-white border border-gray-200 rounded-md px-4 py-3">
+        <div class="text-xs uppercase text-gray-500">Группа</div>
+        <div class="text-xl font-semibold mt-1">default</div>
+      </div>
     </div>
 
-    {% for group in routing_groups %}
-      <div class="border rounded p-4 mb-4">
-        <div class="font-semibold mb-3">{{ group.name }}</div>
-        <form method="POST" action="/routing/groups/{{ group.id }}/members" class="mb-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
-            {% for routing_user in routing_users %}
-              <label class="flex items-center gap-2 text-sm border rounded px-3 py-2">
-                <input type="checkbox" name="user_ids[]" value="{{ routing_user.id }}" {% if routing_user.id in group.member_user_ids %}checked{% endif %}>
-                <span>{{ routing_user.email }}{% if routing_user.routing_group_id and routing_user.routing_group_id != group.id %} ({{ routing_user.routing_group_name }}){% endif %}</span>
-              </label>
-            {% endfor %}
+    <div class="space-y-6">
+      {% for target in route_targets %}
+        <article class="bg-white border border-gray-200 rounded-md shadow-sm">
+          <div class="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-semibold text-gray-900">{{ target.name }}</h2>
+                {% if target.is_synchronized %}
+                  <span class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-green-100 text-green-800">
+                    <i class="fas fa-check mr-1"></i>Применено
+                  </span>
+                {% elseif target.apply_status == 'failed' %}
+                  <span class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-red-100 text-red-800">
+                    <i class="fas fa-times mr-1"></i>Ошибка
+                  </span>
+                {% else %}
+                  <span class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800">
+                    <i class="fas fa-clock mr-1"></i>Ожидает применения
+                  </span>
+                {% endif %}
+              </div>
+              <div class="text-sm text-gray-600 mt-1">
+                {{ target.ingress_server_name }} → {{ target.egress_name }}
+                <span class="mx-2 text-gray-300">|</span>
+                {{ target.transport_label }}
+              </div>
+            </div>
+            <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+              <div>
+                <dt class="text-gray-500">Интерфейс</dt>
+                <dd class="font-mono text-gray-900">{{ target.route_interface_name }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-500">Маршрутов</dt>
+                <dd class="font-semibold text-gray-900">{{ target.entry_count }}</dd>
+              </div>
+            </dl>
           </div>
-          <button class="bg-gray-800 text-white px-4 py-2 rounded">Сохранить участников</button>
-        </form>
 
-        <form method="POST" action="/routing/groups/{{ group.id }}/permissions" class="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <select name="server_link_id" class="px-3 py-2 border rounded md:col-span-2" required>
-            <option value="">Server link</option>
-            {% for link in links %}
-              <option value="{{ link.id }}">{{ link.name }} / {{ link.ingress_server_name }} -> {{ link.egress_server_name }}</option>
-            {% endfor %}
-          </select>
-          <select name="permission" class="px-3 py-2 border rounded">
-            <option value="allow">allow</option>
-            <option value="deny">deny</option>
-          </select>
-          <input name="max_routes" type="number" min="1" max="1000" value="100" class="px-3 py-2 border rounded" placeholder="max routes">
-          <input name="minimum_prefix_length" type="number" min="0" max="32" value="8" class="px-3 py-2 border rounded" placeholder="min prefix">
-          <label class="flex items-center gap-2 px-3 py-2 border rounded text-sm">
-            <input type="checkbox" name="allow_default_route" value="1">
-            <span>0.0.0.0/0</span>
-          </label>
-          <button class="gradient-bg text-white px-4 py-2 rounded md:col-span-6">Сохранить право группы</button>
+          <form method="POST" action="/routing/targets/{{ target.id }}/save-apply"
+                class="px-5 py-5 route-target-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_hash" value="{{ target.edit_hash }}">
+            <label for="routeEntries{{ target.id }}" class="block text-sm font-medium text-gray-800 mb-2">
+              Сети назначения
+            </label>
+            <textarea id="routeEntries{{ target.id }}" name="entries" rows="18" required
+                      spellcheck="false" autocapitalize="off" autocomplete="off"
+                      class="block w-full resize-y rounded-md border border-gray-300 bg-gray-50 px-3 py-3 font-mono text-sm leading-6 text-gray-900 focus:border-purple-500 focus:ring-purple-500"
+                      placeholder="192.0.2.0/24&#10;203.0.113.0/24">{{ target.entries_text }}</textarea>
+
+            {% if target.last_error %}
+              <div class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {{ target.last_error }}
+              </div>
+            {% endif %}
+
+            <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p class="text-xs text-gray-500">
+                Один IPv4 CIDR на строку. При применении список записывается на {{ target.ingress_server_name }}.
+              </p>
+              <button type="submit"
+                      class="gradient-bg inline-flex min-h-10 items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-white shadow-sm disabled:cursor-wait disabled:opacity-60">
+                <i class="fas fa-cloud-upload-alt mr-2"></i>
+                <span>Сохранить и применить</span>
+              </button>
+            </div>
+          </form>
+        </article>
+      {% else %}
+        <div class="border border-yellow-200 bg-yellow-50 rounded-md px-4 py-5 text-yellow-900">
+          Направления еще не созданы. Выполните миграцию общей маршрутизации.
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section id="groups" data-routing-panel class="hidden">
+    <div class="bg-white border border-gray-200 rounded-md shadow-sm">
+      <div class="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">Группа default</h2>
+          <p class="text-sm text-gray-600 mt-1">Общие маршруты действуют для всех подключений. Новые пользователи добавляются автоматически.</p>
+        </div>
+        <form method="POST" action="/routing/groups/default/sync">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="inline-flex min-h-10 items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <i class="fas fa-sync-alt mr-2"></i>Синхронизировать
+          </button>
         </form>
       </div>
-    {% endfor %}
 
-    <div class="overflow-x-auto">
-      <table class="w-full">
-        <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Group</th><th class="px-4 py-2 text-left">Link</th><th class="px-4 py-2 text-left">Permission</th><th class="px-4 py-2 text-left">Limits</th></tr></thead>
-        <tbody>
-          {% for permission in group_permissions %}
-          <tr class="border-t">
-            <td class="px-4 py-2">{{ permission.group_name }}</td>
-            <td class="px-4 py-2">{{ permission.link_name }} / {{ permission.ingress_server_name }} -> {{ permission.egress_server_name }}</td>
-            <td class="px-4 py-2">{{ permission.permission }}</td>
-            <td class="px-4 py-2">max {{ permission.max_routes }}, /{{ permission.minimum_prefix_length }}+{% if permission.allow_default_route %}, default route{% endif %}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Групповых прав пока нет</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Пользователь</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Роль</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Статус</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Группа</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            {% for routing_user in routing_users %}
+              <tr>
+                <td class="px-5 py-3">
+                  <div class="font-medium text-gray-900">{{ routing_user.name|default(routing_user.email) }}</div>
+                  <div class="text-sm text-gray-500">{{ routing_user.email }}</div>
+                </td>
+                <td class="px-5 py-3 text-sm text-gray-700">{{ routing_user.role }}</td>
+                <td class="px-5 py-3 text-sm text-gray-700">{{ routing_user.status }}</td>
+                <td class="px-5 py-3">
+                  <span class="inline-flex rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800">
+                    {{ routing_user.routing_group_name|default('default') }}
+                  </span>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="px-5 py-8 text-center text-gray-500">Пользователей нет</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="bg-white rounded shadow p-6">
-    <h2 class="font-bold mb-4">Server links</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full">
-        <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Ingress</th><th class="px-4 py-2 text-left">Egress</th><th class="px-4 py-2 text-left">Access</th><th class="px-4 py-2 text-left">Status</th></tr></thead>
-        <tbody>
-          {% for link in links %}
-          <tr class="border-t">
-            <td class="px-4 py-2">{{ link.name }}</td>
-            <td class="px-4 py-2">{{ link.ingress_server_name }}</td>
-            <td class="px-4 py-2">{{ link.egress_server_name }}</td>
-            <td class="px-4 py-2">{{ link.user_access_mode }}</td>
-            <td class="px-4 py-2">{{ link.status }} / {{ link.health_status }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Links пока нет</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <section id="status" data-routing-panel class="hidden">
+    <div class="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+      <div class="border-b border-gray-200 px-5 py-4">
+        <h2 class="text-lg font-semibold">Состояние направлений</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Направление</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Транспорт</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Состояние</th>
+              <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Последнее применение</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for target in route_targets %}
+              <tr>
+                <td class="px-5 py-3">
+                  <div class="font-medium text-gray-900">{{ target.name }}</div>
+                  <div class="font-mono text-xs text-gray-500 mt-1">{{ target.route_file_path }}</div>
+                </td>
+                <td class="px-5 py-3 text-sm text-gray-700">{{ target.transport_label }}</td>
+                <td class="px-5 py-3 text-sm">
+                  {% if target.is_synchronized %}
+                    <span class="text-green-700"><i class="fas fa-check-circle mr-1"></i>Синхронизировано</span>
+                  {% elseif target.apply_status == 'failed' %}
+                    <span class="text-red-700"><i class="fas fa-exclamation-circle mr-1"></i>Ошибка</span>
+                  {% else %}
+                    <span class="text-yellow-700"><i class="fas fa-clock mr-1"></i>{{ target.apply_status }}</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3 text-sm text-gray-700">{{ target.last_applied_at|default('—') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </section>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const tabs = Array.from(document.querySelectorAll('[data-routing-tab]'));
+  const panels = Array.from(document.querySelectorAll('[data-routing-panel]'));
+  const validTabs = tabs.map(function (tab) { return tab.dataset.routingTab; });
+
+  function activate(name, updateHash) {
+    const selected = validTabs.includes(name) ? name : 'routes';
+    tabs.forEach(function (tab) {
+      const active = tab.dataset.routingTab === selected;
+      tab.classList.toggle('border-purple-600', active);
+      tab.classList.toggle('text-purple-700', active);
+      tab.classList.toggle('border-transparent', !active);
+      tab.classList.toggle('text-gray-500', !active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    panels.forEach(function (panel) {
+      panel.classList.toggle('hidden', panel.id !== selected);
+    });
+    if (updateHash) {
+      history.replaceState(null, '', '#' + selected);
+    }
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      activate(tab.dataset.routingTab, true);
+    });
+  });
+
+  document.querySelectorAll('.route-target-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      const button = form.querySelector('button[type="submit"]');
+      if (button) {
+        button.disabled = true;
+        button.querySelector('span').textContent = 'Применение...';
+      }
+    });
+  });
+
+  activate(window.location.hash.slice(1), false);
+});
+</script>
 {% endblock %}

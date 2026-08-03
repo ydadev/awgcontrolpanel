@@ -1,47 +1,45 @@
 # Routing Operations
 
-## Phase 1
+## Editing routes
 
-1. Apply migrations `074` through `082`.
-2. Start the panel with Redis, `routing-worker`, and `routing-scheduler`.
-3. Open `Routing` as an administrator.
-4. Create routing ingresses for policy-routing capable installed protocols.
-5. Create server links and IP lists.
-6. Optionally create routing user groups, assign users, and save group link permissions. A grouped user cannot create individual route lists.
-7. Build revisions through the admin UI or API.
+1. Sign in as an administrator.
+2. Open `Routing`.
+3. Select the `Routes` tab.
+4. Edit the destination list under `kazan1 -> vienna2` or `kazan1 -> office1`.
+5. Enter one IPv4 address or CIDR per line. A plain address is normalized to `/32`.
+6. Select `Save and apply`.
+7. Confirm that the target status is `Applied` and the route count is correct.
 
-Revisions are stored in `routing_config_revisions`. They are not pushed to a real agent until the agent phase is implemented.
+Saving changes the live packet path. Take a database dump and back up the route/config files on the source node before a large replacement.
 
-## AWG2 inter-server transport
+## Groups
 
-An egress link can use an AmneziaWG 2.0 userspace tunnel when ordinary WireGuard is filtered or unstable between nodes. The tested layout uses:
+The `Groups` tab is informational in the shared model. `default` is the only active routing group, all users belong to it, and new users are assigned by a database trigger. `Synchronize` repairs membership if records were imported manually.
 
-- `amneziawg-go` in a host-network Docker container;
-- a dedicated point-to-point subnet and interface;
-- numeric endpoint addresses and a configurable UDP listener, including UDP 443;
-- MTU 1280 and TCP MSS 1200 in both forwarding directions;
-- source NAT on the ingress node and masquerading on the egress node;
-- the original WireGuard link kept available for rollback.
+## Validation
 
-Use `scripts/awg2-userspace-entrypoint.sh` as the container entrypoint. It avoids the slow `awg-quick` parser for configurations with a large `AllowedIPs` list, starts `amneziawg-go` directly, applies a pre-stripped `awg setconf` file, runs node-specific `up.sh` and `down.sh` hooks, and writes a `ready` marker after all routes and firewall rules are installed. The container needs host networking, `NET_ADMIN`, and `/dev/net/tun`.
+After applying either list, verify:
 
-Install `scripts/awg2-host-mss.sh` as a host-level systemd oneshot instead of applying TCP MSS rules from the container image. This keeps host firewall behavior independent of the image's `iptables` implementation and restores the SYN-only MSS chain at boot without granting the container host PID access or `SYS_ADMIN`.
+1. desired and applied hashes match in `routing_route_targets`;
+2. the persistent route file count and SHA-256 hash match the panel;
+3. representative destinations resolve to the expected interface with `ip route get`;
+4. the inter-server tunnel has a recent handshake;
+5. forwarding and NAT counters increase for test traffic;
+6. routes recover after the relevant tunnel/container restart.
 
-After copying these helpers to a node, run `chmod 0755` on both scripts before using them as a container entrypoint or a systemd `ExecStart`.
+For `office1`, also verify the peer `AllowedIPs`, the managed `PostUp`/`PostDown` hooks, and access to the office network.
 
-The entrypoint requires `AWG_ADDRESS`. Optional variables are `AWG_INTERFACE`, `AWG_CONFIG_DIR`, `AWG_SETCONF_FILE`, `AWG_UP_SCRIPT`, `AWG_DOWN_SCRIPT`, `AWG_READY_FILE`, and `AWG_MTU`. Keep private keys, preshared keys, endpoint addresses, route lists, and generated configuration outside Git.
+For `vienna2`, verify the `awg-egress` ready marker, MTU/MSS rules, public egress address, HTTPS access, and packet loss with small and near-MTU probes.
 
-Before switching production routes, verify all of the following:
+## Failure behavior
 
-1. Packet loss for small, 1200-byte, and near-MTU probes.
-2. The selected destinations resolve to the AWG egress interface.
-3. Ingress SNAT, egress masquerading, forwarding, and SYN-only MSS rules.
-4. HTTP and bulk-download tests through the tunnel source address.
-5. Container restart recovery and the `ready` marker on both nodes.
-6. Matching desired and applied routing versions and hashes.
+- Invalid or empty lists are rejected before SSH execution.
+- A stale browser edit is rejected by its expected hash.
+- Concurrent applies to the same target are serialized.
+- New routes are installed before stale routes are removed.
+- A missing interface, missing config, multiple office peers, SSH failure, or hash mismatch marks the target `failed`.
+- A failed target keeps the desired database list so the administrator can correct it and apply again.
 
 ## Rollback
 
-The pre-routing project backup for version `0.1.1` is stored outside Git under `local/backups/`.
-
-For a test server, restore the project files from the backup archive and restart compose. Database rollback requires restoring a database volume or dump made before applying routing migrations.
+Restore the database dump and project archive made before migration `085` to return to the legacy schema behavior. For a route-only rollback, restore the previous route/config files on the source node and bring the affected tunnel back up.

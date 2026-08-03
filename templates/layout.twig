@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <script>
         tailwind = { config: { devtools: false } };
     </script>
@@ -90,9 +94,11 @@
                         <a href="/servers" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
                             <i class="fas fa-server mr-2"></i>{{ t('menu.servers') }}
                         </a>
-                        <a href="{% if user.role == 'admin' %}/routing{% else %}/my/routes{% endif %}" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
+                        {% if user.role == 'admin' %}
+                        <a href="/routing" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
                             <i class="fas fa-route mr-2"></i>Маршруты
                         </a>
+                        {% endif %}
                         {% if user.role == 'admin' %}
                         <a href="/settings" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
                             <i class="fas fa-cog mr-2"></i>{{ t('menu.settings') }}
@@ -159,9 +165,11 @@
                 <a href="/servers" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
                     <i class="fas fa-server mr-2"></i>{{ t('menu.servers') }}
                 </a>
-                <a href="{% if user.role == 'admin' %}/routing{% else %}/my/routes{% endif %}" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
+                {% if user.role == 'admin' %}
+                <a href="/routing" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
                     <i class="fas fa-route mr-2"></i>Маршруты
                 </a>
+                {% endif %}
                 {% if user.role == 'admin' %}
                 <a href="/settings" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
                     <i class="fas fa-cog mr-2"></i>{{ t('menu.settings') }}

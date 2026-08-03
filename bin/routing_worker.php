@@ -15,6 +15,24 @@ $once = in_array('--once', $argv, true);
 do {
     try {
         $pdo = DB::conn();
+        $sharedMode = (int) $pdo->query(
+            'SELECT COUNT(*) FROM settings
+             WHERE user_id IS NULL
+               AND namespace = "routing"
+               AND `key` = "shared_route_targets_migrated"'
+        )->fetchColumn() > 0;
+        if ($sharedMode) {
+            $pdo->exec(
+                'UPDATE routing_outbox
+                 SET status = "processed", processed_at = NOW()
+                 WHERE status IN ("pending", "queued")'
+            );
+            if (!$once) {
+                sleep(3);
+            }
+            continue;
+        }
+
         $stmt = $pdo->query('
             SELECT server_id, MIN(id) AS first_event_id
             FROM routing_outbox

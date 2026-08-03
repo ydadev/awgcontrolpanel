@@ -11,6 +11,25 @@ $once = in_array('--once', $argv, true);
 do {
     try {
         $pdo = DB::conn();
+        $sharedMode = (int) $pdo->query(
+            'SELECT COUNT(*) FROM settings
+             WHERE user_id IS NULL
+               AND namespace = "routing"
+               AND `key` = "shared_route_targets_migrated"'
+        )->fetchColumn() > 0;
+        if ($sharedMode) {
+            $pdo->exec(
+                'UPDATE routing_server_state
+                 SET last_reconcile_at = NOW()
+                 WHERE last_reconcile_at IS NULL
+                    OR last_reconcile_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)'
+            );
+            if (!$once) {
+                sleep(300);
+            }
+            continue;
+        }
+
         $pdo->exec('
             INSERT INTO routing_server_state (server_id, last_reconcile_at)
             SELECT s.id, NULL
