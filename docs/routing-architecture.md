@@ -1,29 +1,44 @@
 # Routing Architecture
 
-This subsystem stores desired per-connection IPv4 routing policy in MySQL and prepares versioned server configurations for a future host-level `awg-routing-agent`.
+The active routing model is shared and administrator-managed. It is not tied to a user, VPN connection, or personal IP list.
 
-Phase 1 implements the safe control-plane foundation:
+## Default group
 
-- policy-routing capability flag on protocols;
-- routing ingress and IP pool records;
-- server link records;
-- reusable IPv4 lists;
-- profiles, rules, user and group link permissions;
-- routing user groups;
-- outbox, revision and audit tables;
-- admin and user UI entry points;
-- JSON config builder and revision creator.
+- Migration `085_create_shared_route_targets.sql` removes legacy profiles, individual/group link permissions, personal route lists, and old memberships.
+- One system group named `default` remains.
+- Every existing user is assigned to `default`.
+- A database trigger assigns every newly created user to `default`.
+- Regular users do not receive a routing menu or route-editing endpoint.
 
-Phase 1 intentionally does not change existing WireGuard or AmneziaWG data-plane behavior. Existing server installation and connection generation continue to work through the original panel code.
+## Route targets
 
-The production design remains:
+`routing_route_targets` binds one editable IPv4 list to:
 
-```text
-VPN connection IP -> policy_id -> destination CIDR -> direct/block/fwmark -> routing table -> egress
-```
+- the `default` group;
+- the source routing ingress;
+- a destination/interface;
+- an apply strategy and persistent route-list file;
+- desired/applied hashes, status, error, and apply timestamp.
 
-Packet handling must happen in the Linux kernel with nftables, conntrack marks and policy routing. PHP, MySQL and Redis must never be involved per packet.
+The current deployment has two targets:
 
-## User Groups
+| Source | Destination | Transport | Interface | Apply strategy |
+|---|---|---|---|---|
+| `kazan1` | `vienna2` | AmneziaWG 2.0, UDP 443 | `awg-egress` | Linux route file |
+| `kazan1` | `office1` | WireGuard, UDP 51835 | `office1` | WireGuard config |
 
-Routing groups are an administrative policy layer above individual user settings. A user can belong to only one routing group at a time. When membership exists, the panel resolves allowed server links, route limits, and default-route permission from the group and ignores individual `routing_user_link_permissions` for that user. The user UI becomes read-only for route-list creation, so group policy cannot be overridden by personal settings.
+The Vienna target atomically replaces `/opt/amnezia/awg-egress/routes.txt`, adds new routes before removing stale routes, and verifies the file hash.
+
+The office target updates the managed route file, the peer `AllowedIPs`, persistent `PostUp`/`PostDown` hooks, live kernel routes, and the required source NAT rules. The service requires exactly one peer on the managed interface and verifies the written list hash.
+
+## Apply flow
+
+1. The administrator submits one IPv4 CIDR per line.
+2. The panel normalizes and deduplicates the list.
+3. An optimistic hash rejects a stale browser edit.
+4. The desired list is saved and marked `pending`.
+5. A per-target database advisory lock serializes apply operations.
+6. The list is applied over the server's existing SSH management connection.
+7. The panel records the applied hash, timestamp, audit event, and synchronous revision.
+
+Legacy worker/scheduler containers remain compatible with existing Compose installations, but become passive after shared-route migration `085`.

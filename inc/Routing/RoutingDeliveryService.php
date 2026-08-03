@@ -4,8 +4,20 @@ class RoutingDeliveryService
 {
     public static function createRevision(int $serverId): int
     {
-        $config = RoutingConfigBuilder::buildForServer($serverId);
         $pdo = DB::conn();
+        $sharedMode = (int) $pdo->query(
+            'SELECT COUNT(*) FROM settings
+             WHERE user_id IS NULL
+               AND namespace = "routing"
+               AND `key` = "shared_route_targets_migrated"'
+        )->fetchColumn() > 0;
+        if ($sharedMode) {
+            throw new RuntimeException(
+                'Legacy routing revisions are disabled in shared route mode'
+            );
+        }
+
+        $config = RoutingConfigBuilder::buildForServer($serverId);
         $pdo->beginTransaction();
         try {
             $stateStmt = $pdo->prepare('

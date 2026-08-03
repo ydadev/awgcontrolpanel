@@ -1,28 +1,7 @@
 # Routing Agent
 
-The target agent is `awg-routing-agent`, a host-level Ubuntu service.
+The earlier phase-1 design reserved a separate `awg-routing-agent` and asynchronous delivery queue. That path is not active in shared-route mode.
 
-Phase 1 includes only the panel-side schema and delivery queue. The real agent still needs to be implemented before traffic can be routed through remote egress servers.
+Migration `085` makes the administrator's save/apply request authoritative and applies each managed list directly through the VPN server's existing SSH management connection. The legacy scheduler and worker stay passive so existing Compose deployments do not need an immediate service-layout change.
 
-Target paths:
-
-```text
-/usr/local/bin/awg-routing-agent
-/etc/awg-routing-agent/
-/var/lib/awg-routing-agent/current/
-/var/lib/awg-routing-agent/previous/
-/var/log/awg-routing-agent/
-```
-
-Required API:
-
-```text
-POST /v1/config/apply
-GET  /v1/status
-GET  /v1/health
-POST /v1/conntrack/clear
-POST /v1/link/keys/generate
-POST /v1/link/keys/rotate
-```
-
-The agent must use mTLS, validate signed full configurations, apply nftables atomically, maintain rollback state, and fail closed for unavailable egress links.
+A dedicated node agent may replace SSH in a future security hardening release. It is not required for the current `default` group route targets.
