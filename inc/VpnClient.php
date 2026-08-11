@@ -276,8 +276,8 @@ class VpnClient
                 );
             }
 
-            self::addClientToServer($serverData, $keys['public'], $clientIP);
             $qrCode = self::generateQRCode($config, $configSlug);
+            self::addClientToServer($serverData, $keys['public'], $clientIP);
             $priv = $keys['private'];
             $pub = $keys['public'];
             $psk = $serverData['preshared_key'];
@@ -655,20 +655,31 @@ class VpnClient
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
 
-        $stmt->execute([
-            $serverId,
-            $userId,
-            $protocolId ?: null,
-            $loginFinal,
-            $clientIP,
-            $pub,
-            $priv,
-            $psk,
-            $config,
-            $qrCode,
-            'active',
-            $expiresAt
-        ]);
+        try {
+            $stmt->execute([
+                $serverId,
+                $userId,
+                $protocolId ?: null,
+                $loginFinal,
+                $clientIP,
+                $pub,
+                $priv,
+                $psk,
+                $config,
+                $qrCode,
+                'active',
+                $expiresAt
+            ]);
+        } catch (Throwable $e) {
+            if ($isWireguard && $pub !== '') {
+                try {
+                    self::removeClientFromServer($serverData, $pub);
+                } catch (Throwable $cleanupError) {
+                    error_log('Failed to roll back WireGuard peer after database error: ' . $cleanupError->getMessage());
+                }
+            }
+            throw $e;
+        }
 
         return (int) $pdo->lastInsertId();
     }
@@ -917,10 +928,16 @@ class VpnClient
         try {
             $containerName = $serverData['container_name'] ?? 'amnezia-awg';
             $server = new VpnServer($serverData['id']);
-            $cmd = sprintf(
-                "docker exec %s cat /opt/amnezia/awg/wg0.conf 2>/dev/null",
-                escapeshellarg($containerName)
-            );
+            $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
+            if ($protocolSlug === 'wireguard-standard') {
+                $cmd = 'cat /etc/wireguard/wg0.conf 2>/dev/null';
+            } else {
+                $cmd = sprintf(
+                    "docker exec %s sh -c %s",
+                    escapeshellarg($containerName),
+                    escapeshellarg('cat /opt/amnezia/awg/awg0.conf 2>/dev/null || cat /opt/amnezia/awg/wg0.conf 2>/dev/null')
+                );
+            }
             $serverConfig = $server->executeCommand($cmd, true);
 
             // Extract AllowedIPs from all peers
@@ -1443,20 +1460,29 @@ class VpnClient
                 throw new Exception('Refusing to add WireGuard client without preshared key');
             }
 
+            $server = new VpnServer((int) ($serverData['id'] ?? 0));
+            $config = (string) $server->executeCommand('cat /etc/wireguard/wg0.conf', true);
+            if (strpos($config, '[Interface]') === false) {
+                throw new Exception('WireGuard server configuration is unavailable');
+            }
+
+            $config = self::removeConflictingPeersFromConfig($config, $publicKey, $clientIP);
             $peerBlock = "\n[Peer]\n";
             $peerBlock .= "PublicKey = {$publicKey}\n";
             $peerBlock .= "PresharedKey = {$presharedKey}\n";
             $peerBlock .= "AllowedIPs = {$clientIP}/32\n";
+            $config = rtrim($config) . $peerBlock;
+            $configPayload = escapeshellarg(base64_encode($config));
 
             $script = "set -e\n";
-            $script .= "tmp=\$(mktemp)\n";
-            $script .= "printf '%s\n' " . escapeshellarg($presharedKey) . " > \"\$tmp\"\n";
-            $script .= "wg set wg0 peer " . escapeshellarg($publicKey) . " preshared-key \"\$tmp\" allowed-ips " . escapeshellarg($clientIP . '/32') . "\n";
-            $script .= "rm -f \"\$tmp\"\n";
-            $script .= "cat >> /etc/wireguard/wg0.conf <<'EOF'\n" . $peerBlock . "EOF\n";
+            $script .= "tmp=\$(mktemp /etc/wireguard/wg0.conf.new.XXXXXX)\n";
+            $script .= "trap 'rm -f \"\$tmp\"' EXIT\n";
+            $script .= "printf %s {$configPayload} | base64 -d > \"\$tmp\"\n";
+            $script .= "chmod 600 \"\$tmp\"\n";
+            $script .= "mv \"\$tmp\" /etc/wireguard/wg0.conf\n";
+            $script .= "wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)\n";
 
-            $server = new VpnServer((int) ($serverData['id'] ?? 0));
-            $server->executeCommand('sh -lc ' . escapeshellarg($script), true);
+            $server->executeCommand('bash -lc ' . escapeshellarg($script), true);
             return;
         }
 
@@ -1826,6 +1852,26 @@ class VpnClient
     {
         $containerName = $serverData['container_name'];
         $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
+
+        if ($protocolSlug === 'wireguard-standard') {
+            $server = new VpnServer((int) ($serverData['id'] ?? 0));
+            $config = (string) $server->executeCommand('cat /etc/wireguard/wg0.conf', true);
+            if (strpos($config, '[Interface]') === false) {
+                throw new Exception('WireGuard server configuration is unavailable');
+            }
+            $config = self::removePeerFromConfig($config, $publicKey);
+            $payload = escapeshellarg(base64_encode(rtrim($config) . "\n"));
+            $script = "set -e\n";
+            $script .= "tmp=\$(mktemp /etc/wireguard/wg0.conf.new.XXXXXX)\n";
+            $script .= "trap 'rm -f \"\$tmp\"' EXIT\n";
+            $script .= "printf %s {$payload} | base64 -d > \"\$tmp\"\n";
+            $script .= "chmod 600 \"\$tmp\"\n";
+            $script .= "mv \"\$tmp\" /etc/wireguard/wg0.conf\n";
+            $script .= "wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)\n";
+            $server->executeCommand('bash -lc ' . escapeshellarg($script), true);
+            return;
+        }
+
         // Config dir inside container is always /opt/amnezia/awg
         $configDir = '/opt/amnezia/awg';
 
@@ -1929,6 +1975,40 @@ class VpnClient
         }
 
         return implode("\n", $newLines);
+    }
+
+    /**
+     * Remove stale WireGuard peers that would conflict with the peer being added.
+     */
+    private static function removeConflictingPeersFromConfig(string $config, string $publicKey, string $clientIP): string
+    {
+        $targetCidr = trim($clientIP) . '/32';
+        $sections = preg_split('/(?=^\[[^\]\r\n]+\][ \t]*$)/m', $config) ?: [$config];
+        $kept = [];
+
+        foreach ($sections as $section) {
+            if (!preg_match('/^\[Peer\][ \t]*$/m', $section)) {
+                $kept[] = $section;
+                continue;
+            }
+
+            $sectionPublicKey = '';
+            if (preg_match('/^[ \t]*PublicKey[ \t]*=[ \t]*(.+?)[ \t]*$/mi', $section, $match)) {
+                $sectionPublicKey = trim($match[1]);
+            }
+
+            $allowedIps = [];
+            if (preg_match('/^[ \t]*AllowedIPs[ \t]*=[ \t]*(.+?)[ \t]*$/mi', $section, $match)) {
+                $allowedIps = array_map('trim', explode(',', $match[1]));
+            }
+
+            if ($sectionPublicKey === $publicKey || in_array($targetCidr, $allowedIps, true)) {
+                continue;
+            }
+            $kept[] = $section;
+        }
+
+        return implode('', $kept);
     }
 
     /**

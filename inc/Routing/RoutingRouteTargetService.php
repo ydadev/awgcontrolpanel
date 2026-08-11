@@ -178,9 +178,10 @@ class RoutingRouteTargetService
             )->execute([$desiredHash, $targetId]);
 
             $server = new VpnServer((int) $target['server_id']);
+            $sourceSubnets = self::sourceSubnetsForServer((int) $target['server_id']);
             $output = match ($target['apply_strategy']) {
-                'linux_route_file' => self::applyLinuxRouteFile($server, $target, $cidrs, $desiredHash),
-                'wireguard_config' => self::applyWireGuardConfig($server, $target, $cidrs, $desiredHash),
+                'linux_route_file' => self::applyLinuxRouteFile($server, $target, $cidrs, $desiredHash, $sourceSubnets),
+                'wireguard_config' => self::applyWireGuardConfig($server, $target, $cidrs, $desiredHash, $sourceSubnets),
                 default => throw new RuntimeException('Unknown route apply strategy'),
             };
 
@@ -293,12 +294,17 @@ class RoutingRouteTargetService
         VpnServer $server,
         array $target,
         array $cidrs,
-        string $desiredHash
+        string $desiredHash,
+        array $sourceSubnets
     ): string {
         $interface = escapeshellarg($target['route_interface_name']);
         $routeFile = escapeshellarg($target['route_file_path']);
         $payload = escapeshellarg(base64_encode(implode("\n", $cidrs) . "\n"));
         $hash = escapeshellarg($desiredHash);
+        $sources = escapeshellarg(implode(' ', $sourceSubnets));
+        $snatBlockPayload = escapeshellarg(base64_encode(
+            self::linuxRouteSnatBlock((string) $target['route_interface_name'], $sourceSubnets)
+        ));
         $successMarker = self::SUCCESS_MARKER;
 
         $command = <<<SH
@@ -306,6 +312,7 @@ set -eu
 interface={$interface}
 route_file={$routeFile}
 expected_hash={$hash}
+source_subnets={$sources}
 test -d /opt/amnezia/awg-egress
 ip link show "\$interface" >/dev/null
 install -d -m 700 "\$(dirname "\$route_file")"
@@ -319,10 +326,28 @@ else
   : > "\$old_file"
 fi
 sed -e 's|^|route replace |' -e "s|\$| dev \$interface|" "\$tmp_file" | ip -batch -
+tunnel_source=\$(ip -4 -o address show dev "\$interface" scope global | awk 'NR == 1 { split(\$4, address, "/"); print address[1] }')
+[ -n "\$tunnel_source" ]
+for source in \$source_subnets; do
+  iptables -t nat -C POSTROUTING -s "\$source" -o "\$interface" -j SNAT --to-source "\$tunnel_source" 2>/dev/null ||
+    iptables -t nat -I POSTROUTING 1 -s "\$source" -o "\$interface" -j SNAT --to-source "\$tunnel_source"
+done
 comm -23 "\$old_file" "\$tmp_file" |
   sed -e 's|^|route delete |' -e "s|\$| dev \$interface|" |
   ip -force -batch - >/dev/null 2>&1 || true
 install -m 600 "\$tmp_file" "\$route_file"
+if [ -f /opt/amnezia/awg-egress/up.sh ]; then
+  up_tmp=\$(mktemp /opt/amnezia/awg-egress/up.sh.new.XXXXXX)
+  awk '
+    /^# AWGCONTROLPANEL-MANAGED-SNAT-BEGIN$/ { managed = 1; next }
+    /^# AWGCONTROLPANEL-MANAGED-SNAT-END$/ { managed = 0; next }
+    !managed { print }
+  ' /opt/amnezia/awg-egress/up.sh > "\$up_tmp"
+  printf %s {$snatBlockPayload} | base64 -d >> "\$up_tmp"
+  chmod --reference=/opt/amnezia/awg-egress/up.sh "\$up_tmp"
+  chown --reference=/opt/amnezia/awg-egress/up.sh "\$up_tmp"
+  mv "\$up_tmp" /opt/amnezia/awg-egress/up.sh
+fi
 actual_hash=\$(sha256sum "\$route_file" | awk '{print \$1}')
 [ "\$actual_hash" = "\$expected_hash" ]
 echo {$successMarker}
@@ -335,7 +360,8 @@ SH;
         VpnServer $server,
         array $target,
         array $cidrs,
-        string $desiredHash
+        string $desiredHash,
+        array $sourceSubnets
     ): string {
         $interfaceName = (string) $target['route_interface_name'];
         $interface = escapeshellarg($interfaceName);
@@ -345,8 +371,9 @@ SH;
         $configPath = escapeshellarg('/etc/wireguard/' . $interfaceName . '.conf');
         $hookPathValue = '/opt/awgcontrolpanel/routes/' . $interfaceName . '-hook.sh';
         $hookPath = escapeshellarg($hookPathValue);
-        $hookContent = self::wireGuardHookScript($target['route_file_path']);
+        $hookContent = self::wireGuardHookScript($target['route_file_path'], $sourceSubnets);
         $hookPayload = escapeshellarg(base64_encode($hookContent));
+        $sources = escapeshellarg(implode(' ', $sourceSubnets));
         $successMarker = self::SUCCESS_MARKER;
 
         $command = <<<SH
@@ -356,6 +383,7 @@ route_file={$routeFile}
 config_file={$configPath}
 hook_file={$hookPath}
 expected_hash={$hash}
+source_subnets={$sources}
 ip link show "\$interface" >/dev/null
 test -f "\$config_file"
 install -d -m 700 "\$(dirname "\$route_file")"
@@ -387,7 +415,7 @@ sed -E "0,/^[[:space:]]*AllowedIPs[[:space:]]*=/{s|^[[:space:]]*AllowedIPs[[:spa
   ' > "\$config_tmp"
 grep -Fqx "AllowedIPs = \$allowed_ips" "\$config_tmp"
 sed -e 's|^|route replace |' -e "s|\$| dev \$interface|" "\$tmp_file" | ip -batch -
-for source in 10.8.2.0/24 172.17.0.0/16; do
+for source in \$source_subnets; do
   while IFS= read -r cidr; do
     [ -n "\$cidr" ] || continue
     iptables -t nat -C POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE 2>/dev/null ||
@@ -398,7 +426,7 @@ wg set "\$interface" peer "\$peer" allowed-ips "\$allowed_ips"
 comm -23 "\$old_file" "\$tmp_file" | while IFS= read -r cidr; do
   [ -n "\$cidr" ] || continue
   ip route delete "\$cidr" dev "\$interface" 2>/dev/null || true
-  for source in 10.8.2.0/24 172.17.0.0/16; do
+  for source in \$source_subnets; do
     while iptables -t nat -C POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE 2>/dev/null; do
       iptables -t nat -D POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE
     done
@@ -415,27 +443,29 @@ SH;
         return $server->executeCommand($command, true);
     }
 
-    private static function wireGuardHookScript(string $routeFile): string
+    private static function wireGuardHookScript(string $routeFile, array $sourceSubnets): string
     {
         $safeRouteFile = escapeshellarg($routeFile);
+        $safeSourceSubnets = escapeshellarg(implode(' ', $sourceSubnets));
         return <<<SH
 #!/bin/sh
 set -u
 mode=\${1:-up}
 interface=\${2:-office1}
 route_file={$safeRouteFile}
+source_subnets={$safeSourceSubnets}
 [ -f "\$route_file" ] || exit 0
 while IFS= read -r cidr; do
   [ -n "\$cidr" ] || continue
   if [ "\$mode" = "up" ]; then
     ip route replace "\$cidr" dev "\$interface"
-    for source in 10.8.2.0/24 172.17.0.0/16; do
+    for source in \$source_subnets; do
       iptables -t nat -C POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE 2>/dev/null ||
         iptables -t nat -A POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE
     done
   else
     ip route delete "\$cidr" dev "\$interface" 2>/dev/null || true
-    for source in 10.8.2.0/24 172.17.0.0/16; do
+    for source in \$source_subnets; do
       while iptables -t nat -C POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE 2>/dev/null; do
         iptables -t nat -D POSTROUTING -s "\$source" -d "\$cidr" -o "\$interface" -j MASQUERADE
       done
@@ -443,6 +473,69 @@ while IFS= read -r cidr; do
   fi
 done < "\$route_file"
 SH;
+    }
+
+    private static function linuxRouteSnatBlock(string $interface, array $sourceSubnets): string
+    {
+        $safeInterface = escapeshellarg($interface);
+        $safeSourceSubnets = escapeshellarg(implode(' ', $sourceSubnets));
+        $block = <<<SH
+# AWGCONTROLPANEL-MANAGED-SNAT-BEGIN
+interface={$safeInterface}
+source_subnets={$safeSourceSubnets}
+tunnel_source=\$(ip -4 -o address show dev "\$interface" scope global | awk 'NR == 1 { split(\$4, address, "/"); print address[1] }')
+[ -n "\$tunnel_source" ]
+for source in \$source_subnets; do
+  iptables -t nat -C POSTROUTING -s "\$source" -o "\$interface" -j SNAT --to-source "\$tunnel_source" 2>/dev/null ||
+    iptables -t nat -I POSTROUTING 1 -s "\$source" -o "\$interface" -j SNAT --to-source "\$tunnel_source"
+done
+# AWGCONTROLPANEL-MANAGED-SNAT-END
+SH;
+        return "\n" . trim($block) . "\n";
+    }
+
+    private static function sourceSubnetsForServer(int $serverId): array
+    {
+        $pdo = DB::conn();
+        $subnets = ['172.17.0.0/16'];
+
+        $serverStmt = $pdo->prepare('SELECT vpn_subnet FROM vpn_servers WHERE id = ? LIMIT 1');
+        $serverStmt->execute([$serverId]);
+        $serverSubnet = trim((string) $serverStmt->fetchColumn());
+        if ($serverSubnet !== '') {
+            $subnets[] = $serverSubnet;
+        }
+
+        $protocolStmt = $pdo->prepare(
+            'SELECT sp.config_data, p.definition
+             FROM server_protocols sp
+             JOIN protocols p ON p.id = sp.protocol_id
+             WHERE sp.server_id = ?'
+        );
+        $protocolStmt->execute([$serverId]);
+        foreach ($protocolStmt->fetchAll() as $row) {
+            $config = json_decode((string) ($row['config_data'] ?? ''), true);
+            $definition = json_decode((string) ($row['definition'] ?? ''), true);
+            $protocolSubnet = is_array($config) ? trim((string) ($config['vpn_subnet'] ?? '')) : '';
+            if ($protocolSubnet === '' && is_array($definition)) {
+                $protocolSubnet = trim((string) ($definition['metadata']['vpn_subnet'] ?? ''));
+            }
+            if ($protocolSubnet !== '') {
+                $subnets[] = $protocolSubnet;
+            }
+        }
+
+        $normalized = [];
+        foreach ($subnets as $subnet) {
+            try {
+                $cidr = RoutingValidator::normalizeIpv4Cidr($subnet)['canonical_cidr'];
+                $normalized[$cidr] = true;
+            } catch (InvalidArgumentException $e) {
+                error_log('Ignoring invalid routing source subnet: ' . $subnet);
+            }
+        }
+
+        return array_keys($normalized);
     }
 
     private static function recordAppliedRevision(
