@@ -41,6 +41,7 @@ foreach (['', "::/0\n", "0.0.0.0/0\n"] as $invalid) {
 $server = new VpnServer();
 $cidrs = ['192.0.2.0/24'];
 $hash = hash('sha256', "192.0.2.0/24\n");
+$sourceSubnets = ['172.17.0.0/16', '10.8.1.0/24', '10.8.2.0/24'];
 $targets = [
     'applyLinuxRouteFile' => [
         'route_interface_name' => 'awg-egress',
@@ -55,10 +56,16 @@ $targets = [
 foreach ($targets as $methodName => $target) {
     $method = new ReflectionMethod(RoutingRouteTargetService::class, $methodName);
     $method->setAccessible(true);
-    $script = $method->invoke(null, $server, $target, $cidrs, $hash);
+    $script = $method->invoke(null, $server, $target, $cidrs, $hash, $sourceSubnets);
     if (!str_contains($script, '__AWG_ROUTE_APPLY_OK__')) {
         fwrite(STDERR, "{$methodName} does not emit the success marker\n");
         exit(1);
+    }
+    foreach ($sourceSubnets as $sourceSubnet) {
+        if (!str_contains($script, $sourceSubnet)) {
+            fwrite(STDERR, "{$methodName} omits source subnet {$sourceSubnet}\n");
+            exit(1);
+        }
     }
 
     $path = tempnam(sys_get_temp_dir(), 'route-script-');
