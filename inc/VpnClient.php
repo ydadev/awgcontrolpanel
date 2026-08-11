@@ -258,7 +258,12 @@ class VpnClient
             }
 
             // Generate config from template
-            if ($protoRow && !empty($protoRow['output_template']) && $configSlug === $slug) {
+            if (
+                $protoRow
+                && !empty($protoRow['output_template'])
+                && $configSlug === $slug
+                && $slug !== 'wireguard-standard'
+            ) {
                 require_once __DIR__ . '/ProtocolService.php';
                 $config = ProtocolService::generateProtocolOutput($protoRow, $vars);
             } else {
@@ -1272,6 +1277,23 @@ class VpnClient
             }
         }
 
+        if ($slug === 'wireguard-standard') {
+            $runtime = trim((string) $server->executeCommand(
+                "printf 'public_key='; wg show wg0 public-key; printf 'listen_port='; wg show wg0 listen-port",
+                true
+            ));
+            if (preg_match('/^public_key=([^\s]+)$/mi', $runtime, $keyMatch)) {
+                $serverData['server_public_key'] = trim($keyMatch[1]);
+            }
+            if (preg_match('/^listen_port=(\d+)$/mi', $runtime, $portMatch)) {
+                $port = (int) $portMatch[1];
+                if ($port >= 1 && $port <= 65535) {
+                    $serverData['vpn_port'] = $port;
+                }
+            }
+            return $serverData;
+        }
+
         try {
             $cont = (string) ($serverData['container_name'] ?? '');
             if ($cont === '') {
@@ -2227,7 +2249,12 @@ class VpnClient
             }
         }
 
-        if ($protoRow && !empty($protoRow['output_template']) && $configSlug === $slug) {
+        if (
+            $protoRow
+            && !empty($protoRow['output_template'])
+            && $configSlug === $slug
+            && $slug !== 'wireguard-standard'
+        ) {
             require_once __DIR__ . '/ProtocolService.php';
             $config = ProtocolService::generateProtocolOutput($protoRow, $vars);
         } else {
