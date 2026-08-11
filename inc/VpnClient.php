@@ -1791,6 +1791,11 @@ class VpnClient
             $serverData = $server->getData();
             if ($serverData && $serverData['status'] === 'active') {
                 try {
+                    $serverData = self::applyClientProtocolServerData(
+                        $server,
+                        $serverData,
+                        (int) ($this->data['protocol_id'] ?? 0)
+                    );
                     self::removeClientFromServer($serverData, $this->data['public_key']);
                 } catch (Exception $e) {
                     error_log('Failed to remove client from server: ' . $e->getMessage());
@@ -1819,6 +1824,11 @@ class VpnClient
             $serverData = $server->getData();
             if ($serverData && $serverData['status'] === 'active') {
                 try {
+                    $serverData = self::applyClientProtocolServerData(
+                        $server,
+                        $serverData,
+                        (int) ($this->data['protocol_id'] ?? 0)
+                    );
                     self::addClientToServer($serverData, $this->data['public_key'], $this->data['client_ip']);
                 } catch (Exception $e) {
                     throw new Exception('Failed to restore client on server: ' . $e->getMessage());
@@ -1845,6 +1855,30 @@ class VpnClient
         } catch (Exception $e) {
             return true;
         }
+    }
+
+    private static function applyClientProtocolServerData(
+        VpnServer $server,
+        array $serverData,
+        int $protocolId
+    ): array {
+        if ($protocolId <= 0) {
+            return $serverData;
+        }
+
+        $stmt = DB::conn()->prepare('SELECT * FROM protocols WHERE id = ? LIMIT 1');
+        $stmt->execute([$protocolId]);
+        $protoRow = $stmt->fetch();
+        if (!$protoRow) {
+            return $serverData;
+        }
+
+        $slug = (string) ($protoRow['slug'] ?? '');
+        if (!in_array($slug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true)) {
+            return $serverData;
+        }
+
+        return self::applyProtocolServerData($server, $serverData, $protoRow, $slug);
     }
 
     /**
