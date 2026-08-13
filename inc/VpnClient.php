@@ -956,17 +956,36 @@ class VpnClient
             // Continue with DB-only check
         }
 
+        return self::findAvailableClientIp($networkLong, $prefix, $used);
+    }
+
+    private static function findAvailableClientIp(int $networkLong, int $prefix, array $used): string
+    {
         $hostCount = $prefix <= 30 ? (2 ** (32 - $prefix)) - 2 : max(1, 2 ** (32 - $prefix));
 
         // Find next free host IP, starting after the gateway.
         for ($i = 2; $i <= $hostCount; $i++) {
             $candidate = long2ip($networkLong + $i);
+            // Avoid operationally ambiguous addresses when a pool is wider than /24.
+            if (!self::isPreferredClientIp($candidate)) {
+                continue;
+            }
             if (!isset($used[$candidate])) {
                 return $candidate;
             }
         }
 
         throw new Exception('No free IP addresses in subnet');
+    }
+
+    private static function isPreferredClientIp(string $ip): bool
+    {
+        $lastDot = strrpos($ip, '.');
+        if ($lastDot === false) {
+            return false;
+        }
+        $lastOctet = (int) substr($ip, $lastDot + 1);
+        return $lastOctet !== 0 && $lastOctet !== 255;
     }
 
     /**
