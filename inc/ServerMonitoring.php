@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/WireGuardStats.php';
+
 /**
  * ServerMonitoring - Collect and store server metrics
  * 
@@ -411,28 +413,30 @@ class ServerMonitoring
                 $bytesSent = (int) ($currentDbStats['bytes_sent'] ?? 0);
                 $bytesReceived = (int) ($currentDbStats['bytes_received'] ?? 0);
             } else {
-            // wg show all dump format (tab-separated):
-            // $1=interface $2=pubkey $3=psk $4=endpoint $5=allowed-ips $6=latest-handshake $7=rx-bytes $8=tx-bytes $9=keepalive
-            // rx-bytes = bytes received by server = client's upload (bytes_sent)
-            // tx-bytes = bytes transmitted by server = client's download (bytes_received)
-            $cmd = "docker exec {$containerName} wg show all dump | grep '{$publicKey}' | awk '{print \$6, \$7, \$8}'";
-            $result = $this->execSSH($cmd);
+                $cmd = WireGuardStats::buildDumpCommand($protocolSlug, $containerName);
+                $result = $cmd !== '' ? $this->execSSH($cmd) : null;
+                $peerStats = $result
+                    ? WireGuardStats::parsePeerDump($result, (string) $publicKey)
+                    : null;
 
-            if ($result) {
-                $parts = explode(' ', trim($result));
-                if (count($parts) >= 3) {
-                    $handshakeTs = (int)$parts[0];
-                    $bytesSent = (int)$parts[1];     // server's rx = client's upload
-                    $bytesReceived = (int)$parts[2]; // server's tx = client's download
-                    
-                    // Update last_handshake if there was a recent handshake
+                if ($peerStats !== null) {
+                    $handshakeTs = (int) $peerStats['last_handshake'];
+                    $bytesSent = (int) $peerStats['bytes_sent'];
+                    $bytesReceived = (int) $peerStats['bytes_received'];
+
                     if ($handshakeTs > 0) {
                         $handshakeDate = date('Y-m-d H:i:s', $handshakeTs);
                         $stmtHs = $db->prepare("UPDATE vpn_clients SET last_handshake = ? WHERE id = ?");
                         $stmtHs->execute([$handshakeDate, $client['id']]);
                     }
+                } else {
+                    // Keep the last known totals when SSH/runtime collection is temporarily unavailable.
+                    $stmt = $db->prepare("SELECT bytes_sent, bytes_received FROM vpn_clients WHERE id = ?");
+                    $stmt->execute([$client['id']]);
+                    $currentDbStats = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $bytesSent = (int) ($currentDbStats['bytes_sent'] ?? 0);
+                    $bytesReceived = (int) ($currentDbStats['bytes_received'] ?? 0);
                 }
-            }
             }
         }
 
