@@ -1,129 +1,118 @@
-# awgcontrolpanel
+# AWG Control Panel
 
-> Note for `awgcontrolpanel`: use `docs/deployment-ubuntu-24.04.md` for the first test stand. In this copy, the default SQL admin with `admin123` is disabled for fresh installs; the first admin is created from `.env`.
->
-> This project is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Many thanks to the original project author(s) for the foundation.
+Веб-панель для централизованного управления серверами WireGuard и AmneziaWG, пользователями, VPN-подключениями, правами доступа, статистикой и маршрутами.
 
-Web-based management panel for AmneziaWG/WireGuard VPN servers, adapted from `amneziavpnphp` for the `awgcontrolpanel` test and customization branch.
+> Проект основан на [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Благодарим автора оригинального проекта и его участников за проделанную работу.
 
-## Project Notes
+[Русский](README.md) | [中文](README_ZH.md)
 
-This repository is not a clean upstream mirror. It is a working copy used to adapt the original panel for our own AmneziaWG/WireGuard control panel.
+## О проекте
 
-Important changes in this copy:
+Это рабочая версия панели, адаптированная для управления обычным WireGuard и AmneziaWG 2.0. Администратор добавляет VPN-серверы, назначает пользователям доступ и создает подключения. Обычные пользователи видят только разрешенные им серверы и собственные конфигурации.
 
-- GitHub-based installation instructions for an Ubuntu 24.04 test server were added.
-- Fresh installs no longer create the old SQL default `admin123` account; the first admin is created from `.env`.
-- Test deployment defaults were adjusted for safer local testing.
-- WireGuard Standard and AmneziaWG 2.0 test deployment/client generation paths were fixed and tested on separate Ubuntu 24.04 VMs.
-- Client pages now keep the existing Amnezia VPN app outputs and additionally generate raw WireGuard-style QR/text configuration:
-  - WireGuard Standard clients get a normal WireGuard config QR and text block.
-  - AmneziaWG/AWG2 clients get an AmneziaWG app-compatible WireGuard-style config QR and text block.
-- Regular users no longer manage VPN servers directly. Administrators assign server access per user and can separately allow users to create their own connection configs; removing server access disables that user's active configs on that server.
-- VPN "clients" in the original codebase are treated in this fork as connection records. Each connection belongs to a system user; administrators choose the owner when creating a connection, while regular users can only create connections for their own account when allowed.
-- Routing is now managed as shared destination lists for the system `default` group. Every existing and new user belongs to this group; regular users do not edit routes. Administrators edit the `kazan1 -> vienna2` and `kazan1 -> office1` IPv4 CIDR lists in the Routing screen and save/apply them directly to the source node.
+Основные отличия этой версии:
 
-## Features
+- установка напрямую из GitHub на Ubuntu 24.04;
+- раздельная работа WireGuard Standard и AmneziaWG 2.0;
+- подключение всегда принадлежит выбранному пользователю;
+- обычные пользователи не могут добавлять и администрировать серверы;
+- право входа в панель отделено от права самостоятельного создания конфигураций;
+- администратор может создавать подключения для любого пользователя независимо от его права входа в панель;
+- при отзыве доступа к серверу связанные подключения пользователя блокируются;
+- вывод обычных конфигураций WireGuard и конфигураций AmneziaWG 2.0 с параметрами обфускации;
+- QR-коды, текстовые конфигурации и ссылки для совместимых приложений;
+- живой статус, трафик и скорость подключений для обоих протоколов;
+- группы пользователей и общие списки маршрутов;
+- настраиваемое брендирование, логотип, favicon и цветовая схема;
+- опциональная двухфакторная авторизация по шестизначному коду из электронной почты;
+- базовая защита веб-интерфейса от перебора пароля;
+- безопасная первичная учетная запись администратора из `.env`, без стандартного пароля в SQL.
 
-- VPN server deployment via SSH (Password or **SSH Key**)
-- **Import from existing VPN panels** (wg-easy, 3x-ui)
-- **Advanced Protocol Management** (WireGuard, AmneziaWG, OpenVPN, Shadowsocks, etc.)
-- **AI-powered Protocol Configuration** using OpenRouter (optional)
-- Client configuration management with **expiration dates**
-- **Traffic limits** for clients with automatic enforcement
-- **Server backup and restore** functionality
-- **Scenario Testing**: Define and test different VPN connection scenarios across protocols
-- **Advanced Log Management**: View, search, and manage system and container logs
-- Traffic statistics monitoring
-- QR code generation for mobile apps, including Amnezia VPN app, `vpn://` URL, WireGuard, and AmneziaWG app-compatible configs
-- Multi-language interface (English, Russian, Spanish, German, French, Chinese)
-- REST API with JWT authentication
-- User authentication, roles, and per-user server access control
-- Optional email two-factor authentication for all web-panel users, with encrypted SMTP credentials and rate-limited six-digit codes
-- **Automatic client expiration and traffic limit checks** via cron
+## Возможности
 
-## Available Protocols
+- управление удаленными VPN-серверами по SSH;
+- установка и настройка поддерживаемых VPN-протоколов;
+- создание, блокировка и удаление подключений;
+- привязка подключений к пользователям;
+- сроки действия и лимиты трафика;
+- статистика рукопожатий, приема, передачи и скорости;
+- резервное копирование и восстановление конфигураций серверов;
+- журналы операций и диагностические сценарии;
+- REST API с JWT-аутентификацией;
+- роли, доступ пользователей к серверам и разрешение на создание конфигураций;
+- группы пользователей и централизованное применение маршрутов;
+- SMTP-настройки и почтовая 2FA с шифрованием сохраненных учетных данных;
+- автоматические проверки сроков действия и лимитов трафика;
+- многоязычный интерфейс.
 
-- AmneziaWG Advanced (`amnezia-wg-advanced`)
-- AmneziaWG 2.0 (`awg2`)
-- WireGuard Standard (`wireguard-standard`)
-- OpenVPN (`openvpn`)
-- Shadowsocks (`shadowsocks`)
-- XRay VLESS (`xray-vless`)
-- MTProxy (Telegram) (`mtproxy`)
-- SMB Server (`smb`)
-- AIVPN (`aivpn`) - https://github.com/infosave2007/aivpn
-- Cloudflare WARP Proxy (`cf-warp`) — transparent traffic proxying via Cloudflare
+## Поддерживаемые протоколы
 
+- AmneziaWG Advanced (`amnezia-wg-advanced`);
+- AmneziaWG 2.0 (`awg2`);
+- WireGuard Standard (`wireguard-standard`);
+- OpenVPN (`openvpn`);
+- Shadowsocks (`shadowsocks`);
+- XRay VLESS (`xray-vless`);
+- MTProxy для Telegram (`mtproxy`);
+- SMB Server (`smb`);
+- AIVPN (`aivpn`);
+- Cloudflare WARP Proxy (`cf-warp`).
 
-## Requirements
+Основная проверка этой версии выполняется для WireGuard Standard и AmneziaWG 2.0.
 
-- Docker
-- Docker Compose
+## Требования
 
-## Installation
+### Сервер панели
+
+- Ubuntu 24.04 LTS;
+- Docker Engine и Docker Compose Plugin;
+- Git;
+- доступ к VPN-узлам по SSH;
+- открытые `80` и `443` для веб-интерфейса в рабочей установке либо `8082` для тестового запуска;
+- исходящий доступ к SMTP-серверу, если используется почтовая 2FA.
+
+### Управляемые VPN-серверы
+
+- Ubuntu или другой поддерживаемый Linux;
+- SSH-доступ пользователя с правами `root` или рабочим `sudo`;
+- Docker Engine для сценариев развертывания протоколов в контейнерах;
+- открытые UDP-порты выбранных VPN-протоколов;
+- включенная маршрутизация IPv4 и корректный NAT.
+
+## Быстрая установка на Ubuntu 24.04
+
+### 1. Установите Docker и Git
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+```
+
+### 2. Скачайте проект
 
 ```bash
 git clone https://github.com/ydadev/awgcontrolpanel.git
 cd awgcontrolpanel
 cp .env.example .env
-
-# For Docker Compose V2 (recommended)
-docker compose up -d
-docker compose exec web composer install
-
-# Wait until DB is healthy (initial SQL migration files are applied automatically by MySQL entrypoint)
-until [ "$(docker inspect -f '{{.State.Health.Status}}' amnezia-panel-db 2>/dev/null)" = "healthy" ]; do
-  sleep 2
-done
-
-# Or for older Docker Compose V1
-docker-compose up -d
-docker-compose exec web composer install
-
-until [ "$(docker inspect -f '{{.State.Health.Status}}' amnezia-panel-db 2>/dev/null)" = "healthy" ]; do
-  sleep 2
-done
-
-# Manual migration mode (existing installations / updates only)
-set -a; source .env; set +a
-for f in migrations/*.sql; do
-  docker compose exec -T db mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" < "$f" || true
-done
-
-# For Docker Compose V1 manual migration mode:
-# for f in migrations/*.sql; do
-#   docker-compose exec -T db mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" < "$f" || true
-# done
 ```
 
-Access: http://localhost:8082
+### 3. Настройте `.env`
 
-Login credentials are created from `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`.
+Перед первым запуском обязательно замените все тестовые значения:
 
-### Remote Server Prerequisite
-
-For protocol deployment on a clean remote host, Docker Engine must be available on that host.
-If Docker is missing, install it first (Ubuntu example):
-
-```bash
-apt-get update -y
-apt-get install -y ca-certificates curl gnupg lsb-release
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
-. /etc/os-release
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
-apt-get update -y
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-systemctl enable --now docker
-```
-
-## Configuration
-
-Edit `.env`:
-
-```
+```dotenv
 DB_HOST=db
 DB_PORT=3306
 DB_DATABASE=amnezia_panel
@@ -137,311 +126,188 @@ JWT_SECRET=replace-with-at-least-32-random-characters
 SETTINGS_ENCRYPTION_KEY=replace-with-at-least-32-random-characters
 ```
 
-Email two-factor authentication is configured by an administrator in
-`Settings -> 2FA`. Send a successful test message before enabling it. See
-[`docs/email-two-factor-auth.md`](docs/email-two-factor-auth.md) for deployment
-and recovery details.
+Случайные секреты можно создать командой:
 
-## Usage
-
-### Add VPN Server
-
-1. Servers → Add Server
-2. Enter: name, host IP, SSH port, username
-3. Choose authentication method: **Password** or **SSH Key**
-   - For SSH Key: Paste your private key (PEM/OpenSSH format)
-3. **(Optional) Enable import from existing panel:**
-   - Check "Import from existing panel"
-   - Select panel type (wg-easy or 3x-ui)
-   - Upload backup file (JSON)
-4. Click "Create Server"
-5. Wait for deployment
-6. Clients will be imported automatically if import was enabled
-
-### Create Client
-
-1. Open server details
-2. Enter client name
-3. **Select expiration period** (optional, default: never expires)
-4. **Select traffic limit** (optional, default: unlimited)
-5. Click Create Client
-6. Download config or scan QR code
-
-Client pages provide several connection formats depending on the protocol:
-
-- Amnezia VPN app QR Code (Simple)
-- AWG2 `vpn://` QR Code and text URL, when available
-- raw WireGuard-style QR Code and text configuration
-  - normal WireGuard config for `wireguard-standard`
-  - AmneziaWG app-compatible config for `awg2` and other AmneziaWG-family protocols
-
-### Manage Client Expiration
-
-Set expiration via UI or API:
 ```bash
-# Set specific date
-curl -X POST http://localhost:8082/api/clients/123/set-expiration \
-  -H "Authorization: Bearer <token>" \
-  -d '{"expires_at": "2025-12-31 23:59:59"}'
-
-# Extend by 30 days
-curl -X POST http://localhost:8082/api/clients/123/extend \
-  -H "Authorization: Bearer <token>" \
-  -d '{"days": 30}'
-
-# Get expiring clients (within 7 days)
-curl http://localhost:8082/api/clients/expiring?days=7 \
-  -H "Authorization: Bearer <token>"
+openssl rand -base64 48
 ```
 
-### Manage Traffic Limits
+Не публикуйте рабочий `.env`, дампы базы данных, приватные ключи VPN, SMTP-пароли и резервные копии серверов.
 
-Set and monitor traffic limits via UI or API:
+### 4. Запустите панель
+
 ```bash
-# Set traffic limit (10 GB = 10737418240 bytes)
-curl -X POST http://localhost:8082/api/clients/123/set-traffic-limit \
-  -H "Authorization: Bearer <token>" \
-  -d '{"limit_bytes": 10737418240}'
-
-# Remove traffic limit (set to unlimited)
-curl -X POST http://localhost:8082/api/clients/123/set-traffic-limit \
-  -H "Authorization: Bearer <token>" \
-  -d '{"limit_bytes": null}'
-
-# Check traffic limit status
-curl http://localhost:8082/api/clients/123/traffic-limit-status \
-  -H "Authorization: Bearer <token>"
-
-# Get clients over traffic limit
-curl http://localhost:8082/api/clients/overlimit \
-  -H "Authorization: Bearer <token>"
+docker compose up -d --build
+docker compose exec web composer install --no-interaction --prefer-dist
 ```
 
-### Server Backups
+Дождитесь готовности базы данных:
 
-Create and restore backups via UI or API:
 ```bash
-# Create backup
-curl -X POST http://localhost:8082/api/servers/1/backup \
-  -H "Authorization: Bearer <token>"
-
-# List backups
-curl http://localhost:8082/api/servers/1/backups \
-  -H "Authorization: Bearer <token>"
-
-# Restore from backup
-curl -X POST http://localhost:8082/api/servers/1/restore \
-  -H "Authorization: Bearer <token>" \
-  -d '{"backup_id": 123}'
+until [ "$(docker inspect -f '{{.State.Health.Status}}' amnezia-panel-db 2>/dev/null)" = "healthy" ]; do
+  sleep 2
+done
 ```
 
-### Protocol Management
+Проверьте контейнеры:
 
-Manage VPN protocols via **Settings → Protocols**:
-- Install/Uninstall protocols (WireGuard, AmneziaWG, OpenVPN, etc.)
-- Configure protocol settings (ports, transport, obfuscation)
-- **AI Assistant**: Use "Ask AI" to generate complex protocol configurations tailored to your needs (requires OpenRouter API key).
-
-### Cloudflare WARP Proxy
-
-WARP transparently proxies **all TCP traffic** from VPN clients through the Cloudflare network, hiding the server's real IP address.
-
-> **⚠️ Install WARP last** — after all other protocols (AWG, X-Ray, AIVPN, etc.). During installation, WARP automatically detects active VPN containers and interfaces and configures routing for each of them.
-
-**Supported protocols:**
-- **AWG / AWG2** — routing via container IP + host redsocks
-- **X-Ray VLESS** — `warp-out` outbound via SOCKS5 in X-Ray config
-- **AIVPN / WireGuard** — routing via host-level iptables + redsocks
-
-**Verification:** connect to VPN and open `https://1.1.1.1/cdn-cgi/trace` — the field `warp=on` confirms it's working.
-
-### Scenario Testing & Logs
-
-**Scenario Testing**:
-- Create test scenarios to verify connectivity across different protocols and network conditions.
-- Run automated tests to ensure your VPN infrastructure is reliable.
-
-**Log Management**:
-- Centralized view of all system, container, and application logs.
-- Search and filter capabilities to quickly diagnose issues.
-
-### AI Assistant
-
-Configure OpenRouter API key in **Settings** to enable:
-- Auto-translation of the interface
-- AI-assisted protocol configuration
-- Intelligent troubleshooting suggestions
-
-### Automatic Monitoring and Metrics Collection
-
-**Metrics collector runs automatically** on container startup and is monitored by cron every 3 minutes. If the process crashes, it will be automatically restarted.
-
-Check metrics collector logs:
 ```bash
-docker compose exec web tail -f /var/log/metrics_collector.log
+docker compose ps
+docker compose logs --tail=100 web db
 ```
 
-Check monitoring script logs:
+Для тестовой установки панель доступна по адресу:
+
+```text
+http://SERVER_IP:8082
+```
+
+Войдите с адресом и паролем, указанными в `ADMIN_EMAIL` и `ADMIN_PASSWORD`.
+
+Подробный порядок развертывания приведен в [инструкции для Ubuntu 24.04](docs/deployment-ubuntu-24.04.md) и [инструкции установки из GitHub](docs/install-from-github.md).
+
+## Обновление существующей установки
+
+Перед обновлением сделайте резервную копию базы данных и `.env`.
+
 ```bash
-docker compose exec web tail -f /var/log/metrics_monitor.log
+git pull --ff-only
+docker compose up -d --build
+docker compose exec web composer install --no-interaction --prefer-dist
 ```
 
-Restart metrics collector manually:
+Примените миграции, которые еще не были выполнены в этой установке:
+
 ```bash
-docker compose exec web pkill -f collect_metrics.php
-# It will be auto-restarted within 3 minutes by the monitoring script
+set -a; source .env; set +a
+for f in migrations/*.sql; do
+  docker compose exec -T db mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" < "$f" || true
+done
 ```
 
-### Automatic Client Expiration Check
+После обновления проверьте состояние контейнеров, вход в панель, список серверов и обновление статистики подключений.
 
-**Runs automatically in Docker container** every hour to disable expired clients.
+## Первоначальная настройка
 
-Check cron logs:
-```bash
-docker compose exec web tail -f /var/log/cron.log
+### Добавление VPN-сервера
+
+1. Войдите под администратором.
+2. Откройте раздел серверов.
+3. Добавьте адрес, SSH-порт и учетные данные удаленного узла.
+4. Проверьте SSH-соединение.
+5. Установите или выберите нужный протокол.
+6. Укажите внешний IP-адрес, порт, VPN-подсеть и DNS-серверы для клиентских конфигураций.
+
+Для `Endpoint` панель может использовать внешний IP-адрес сервера, чтобы конфигурации не зависели от DNS.
+
+### Пользователи и права
+
+Администратор управляет пользователями в `Настройки -> Пользователи`:
+
+- **Доступ к сайту** разрешает или запрещает вход пользователя в веб-интерфейс;
+- **Создание конфигураций** разрешает пользователю самостоятельно создавать подключения на доступных серверах;
+- доступ к серверу определяет, какие серверы и конфигурации видит пользователь;
+- администратор может изменить пароль пользователя и создать подключение от его имени;
+- при снятии доступа к серверу подключения пользователя на этом сервере блокируются.
+
+Новые пользователи автоматически добавляются в группу маршрутизации по умолчанию.
+
+### Создание подключения
+
+Администратор при создании подключения выбирает владельца. Если пользователь создает подключение самостоятельно, владельцем автоматически становится его учетная запись.
+
+Панель формирует:
+
+- обычный текстовый конфиг WireGuard;
+- текстовый конфиг AmneziaWG 2.0 с параметрами обфускации;
+- QR-код конфигурации;
+- QR-код и текстовую ссылку `vpn://` для совместимых приложений.
+
+Приватные ключи и готовые пользовательские конфигурации считаются секретными данными.
+
+## Маршрутизация
+
+Маршруты управляются централизованно и применяются к группе пользователей по умолчанию. Во вкладке маршрутов администратор редактирует списки сетей в формате `IP/маска` для настроенных связей между VPN-узлами, создает ревизию и применяет ее на серверах.
+
+Перед применением проверяйте:
+
+- корректность CIDR;
+- отсутствие конфликтов с VPN-подсетями и локальными сетями;
+- состояние межсерверного туннеля;
+- маршруты, правила policy routing, firewall и NAT на обоих концах.
+
+## Двухфакторная авторизация
+
+Почтовая 2FA настраивается в `Настройки -> 2FA`. После правильного пароля панель отправляет шестизначный одноразовый код на адрес пользователя. В настройках задаются SMTP-сервер, порт, тип шифрования, отправитель и учетные данные.
+
+Рекомендации:
+
+- используйте отдельный пароль приложения для SMTP;
+- ограничьте срок действия и количество попыток ввода кода;
+- храните `SETTINGS_ENCRYPTION_KEY` вне Git;
+- перед включением 2FA выполните тестовую отправку письма.
+
+Подробнее: [почтовая двухфакторная авторизация](docs/email-two-factor-auth.md).
+
+## Защита веб-интерфейса
+
+- после трех неудачных попыток вход пользователя временно блокируется на один час;
+- блокировка веб-входа не отключает уже выданные VPN-конфигурации;
+- для рабочей установки используйте HTTPS;
+- ограничьте административный доступ firewall, VPN или доверенными адресами;
+- регулярно обновляйте ОС, Docker-образы и зависимости;
+- не используйте стандартные или повторно применяемые пароли.
+
+## Статистика и обслуживание
+
+Панель собирает сведения о рукопожатиях, трафике и скорости подключений WireGuard и AmneziaWG. Кнопка обновления статистики запрашивает актуальные данные с выбранного VPN-сервера.
+
+Фоновые задания могут выполнять:
+
+- проверку срока действия подключений;
+- проверку лимитов трафика;
+- сбор статистики;
+- применение подготовленных ревизий маршрутов.
+
+Проверяйте журналы контейнеров и статус заданий после установки и обновлений.
+
+## REST API
+
+API использует JWT-аутентификацию. Доступны операции для серверов, протоколов, подключений, резервных копий и импорта панели.
+
+Примеры запросов находятся в [API_EXAMPLES.md](API_EXAMPLES.md). Не передавайте JWT, SSH-пароли и приватные ключи в журналы или публичные системы мониторинга.
+
+## Структура проекта
+
+```text
+awgcontrolpanel/
+├── api/                 # REST API
+├── controllers/         # контроллеры веб-интерфейса
+├── cron/                # фоновые задания
+├── database/            # начальная схема базы данных
+├── docs/                # документация
+├── inc/                 # сервисы и общие классы
+├── migrations/          # миграции базы данных
+├── public/              # публичные ресурсы
+├── scripts/             # служебные сценарии
+├── views/               # шаблоны интерфейса
+├── docker-compose.yml
+└── README.md
 ```
 
-Run manually:
-```bash
-docker compose exec web php /var/www/html/bin/check_expired_clients.php
-```
+## Технологии
 
-### Automatic Traffic Limit Check
+- PHP;
+- MySQL/MariaDB;
+- Docker Compose;
+- HTML, CSS и JavaScript;
+- SSH для управления удаленными узлами;
+- WireGuard и AmneziaWG.
 
-**Runs automatically in Docker container** every hour to disable clients that exceeded their traffic limit.
+## Лицензия
 
-Check cron logs:
-```bash
-docker compose exec web tail -f /var/log/cron.log
-```
+Проект распространяется на условиях лицензии, указанной в [LICENSE](LICENSE).
 
-Run manually:
-```bash
-docker compose exec web php /var/www/html/bin/check_traffic_limits.php
-```
+## Благодарности
 
-### API Authentication
-
-Get JWT token:
-```bash
-curl -X POST http://localhost:8082/api/auth/token \
-  -d "email=$ADMIN_EMAIL&password=$ADMIN_PASSWORD"
-```
-
-Use token:
-```bash
-curl -H "Authorization: Bearer <token>" \
-  http://localhost:8082/api/servers
-```
-
-## API Endpoints
-
-### Authentication
-```
-POST   /api/auth/token              - Get JWT token
-POST   /api/tokens                  - Create persistent API token
-GET    /api/tokens                  - List API tokens
-DELETE /api/tokens/{id}             - Revoke token
-```
-
-### Servers
-```
-GET    /api/servers                 - List all servers
-POST   /api/servers/create          - Create new server
-       Parameters: name, host, port, username, password
-DELETE /api/servers/{id}/delete     - Delete server by ID
-GET    /api/servers/{id}/clients    - List clients on server
-```
-
-### Protocols
-```
-GET    /api/protocols/active        - List all available protocols (JWT-friendly, includes protocol IDs)
-GET    /api/protocols               - Protocol management endpoint (requires session admin auth, not JWT)
-GET    /api/servers/{id}/protocols  - List installed protocols on server
-POST   /api/servers/{id}/protocols/install - Install protocol
-```
-
-### Clients
-```
-GET    /api/clients                 - List all clients
-GET    /api/clients/{id}/details    - Get client details with stats, config and QR code
-GET    /api/clients/{id}/qr         - Get client QR code
-POST   /api/clients/create          - Create new client (returns config and QR code)
-       Parameters: server_id, name, protocol_id (optional, default: installed), expires_in_days (optional)
-POST   /api/clients/{id}/revoke     - Revoke client access
-POST   /api/clients/{id}/restore    - Restore client access
-DELETE /api/clients/{id}/delete     - Delete client by ID (removes from DB and server)
-POST   /api/clients/{id}/set-expiration  - Set client expiration date
-POST   /api/clients/{id}/set-expiration  - Set client expiration date
-       Parameters: expires_at (Y-m-d H:i:s or null)
-POST   /api/clients/{id}/extend     - Extend client expiration
-       Parameters: days (int)
-GET    /api/clients/expiring        - Get clients expiring soon
-       Parameters: days (default: 7)
-POST   /api/clients/{id}/set-traffic-limit  - Set client traffic limit
-       Parameters: limit_bytes (int or null for unlimited)
-GET    /api/clients/{id}/traffic-limit-status - Get traffic limit status
-GET    /api/clients/overlimit       - Get clients over traffic limit
-```
-
-### Backups
-```
-POST   /api/servers/{id}/backup     - Create server backup
-GET    /api/servers/{id}/backups    - List server backups
-POST   /api/servers/{id}/restore    - Restore from backup
-       Parameters: backup_id
-DELETE /api/backups/{id}             - Delete backup
-```
-
-### Panel Import
-```
-POST   /api/servers/{id}/import     - Import clients from existing panel
-       Parameters: panel_type (wg-easy|3x-ui), backup_file (multipart/form-data)
-GET    /api/servers/{id}/imports    - Get import history for server
-```
-
-## Translation
-
-Add OpenRouter API key in Settings, then run:
-```bash
-docker compose exec web php bin/translate_all.php
-```
-
-Or translate via web interface: Settings → Auto-translate
-
-## Structure
-
-```
-public/index.php      - Routes
-inc/                  - Core classes
-  Auth.php           - Authentication
-  DB.php             - Database connection
-  Router.php         - URL routing
-  View.php           - Twig templates
-  VpnServer.php      - Server management
-  VpnClient.php      - Client management
-  Translator.php     - Multi-language
-  JWT.php            - Token auth
-  QrUtil.php         - QR code generation
-  PanelImporter.php  - Import from wg-easy/3x-ui
-  InstallProtocolManager.php - Protocol management core
-  OpenRouterService.php - AI integration
-templates/           - Twig templates
-migrations/          - SQL migrations (executed in alphabetical order)
-```
-
-## Tech Stack
-
-- PHP 8.2
-- MySQL 8.0
-- Twig 3
-- Tailwind CSS
-- Docker
-
-## License
-
-MIT
-
-## Credits
-
-`awgcontrolpanel` is based on [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Thank you to the original project author(s) for publishing the base panel and making this customization possible.
+AWG Control Panel создан на основе проекта [infosave2007/amneziavpnphp](https://github.com/infosave2007/amneziavpnphp). Спасибо автору и сообществу оригинального проекта за основу, идеи и открытый исходный код.
