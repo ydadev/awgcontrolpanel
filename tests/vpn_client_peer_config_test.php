@@ -79,4 +79,32 @@ foreach ([
     }
 }
 
+$preferredIpMethod = new ReflectionMethod(VpnClient::class, 'isPreferredClientIp');
+$preferredIpMethod->setAccessible(true);
+foreach (['10.8.2.255', '10.8.3.0'] as $skippedIp) {
+    if ($preferredIpMethod->invoke(null, $skippedIp)) {
+        fwrite(STDERR, "Wide-pool allocator accepted ambiguous host {$skippedIp}\n");
+        exit(1);
+    }
+}
+if (!$preferredIpMethod->invoke(null, '10.8.3.1')) {
+    fwrite(STDERR, "Wide-pool allocator rejected valid host 10.8.3.1\n");
+    exit(1);
+}
+
+$usedWidePoolIps = [
+    '10.8.2.0' => true,
+    '10.8.2.1' => true,
+];
+for ($host = 2; $host <= 254; $host++) {
+    $usedWidePoolIps['10.8.2.' . $host] = true;
+}
+$findIpMethod = new ReflectionMethod(VpnClient::class, 'findAvailableClientIp');
+$findIpMethod->setAccessible(true);
+$nextWidePoolIp = $findIpMethod->invoke(null, ip2long('10.8.2.0'), 23, $usedWidePoolIps);
+if ($nextWidePoolIp !== '10.8.3.1') {
+    fwrite(STDERR, "Wide-pool allocator returned {$nextWidePoolIp} instead of 10.8.3.1\n");
+    exit(1);
+}
+
 echo "WireGuard peer configuration tests passed\n";
