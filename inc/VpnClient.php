@@ -1,4 +1,7 @@
 <?php
+
+require_once __DIR__ . '/WireGuardStats.php';
+
 /**
  * VPN Client Management Class
  * Handles creation and management of VPN client configurations
@@ -2448,21 +2451,32 @@ class VpnClient
             // Determine protocol by client's protocol_id
             $isXray = false;
             $isAivpn = false;
+            $protocolSlug = '';
             $xrayContainerName = 'amnezia-xray'; // Default XRay container name
             
             if (!empty($this->data['protocol_id'])) {
-                $stmtProto = $pdo->prepare('SELECT slug FROM protocols WHERE id = ?');
+                $stmtProto = $pdo->prepare('SELECT slug, definition FROM protocols WHERE id = ?');
                 $stmtProto->execute([$this->data['protocol_id']]);
                 $protoData = $stmtProto->fetch();
                 if ($protoData) {
-                    $slug = (string) ($protoData['slug'] ?? '');
-                    if (stripos($slug, 'xray') !== false) {
+                    $protocolSlug = (string) ($protoData['slug'] ?? '');
+                    if (stripos($protocolSlug, 'xray') !== false) {
                         $isXray = true;
                     }
-                    if (stripos($slug, 'aivpn') !== false) {
+                    if (stripos($protocolSlug, 'aivpn') !== false) {
                         $isAivpn = true;
                     }
+
+                    $definition = json_decode((string) ($protoData['definition'] ?? ''), true);
+                    $statsContainer = trim((string) ($definition['metadata']['container_name'] ?? ''));
+                    if ($statsContainer !== '') {
+                        $serverData['container_name'] = $statsContainer;
+                    }
                 }
+            }
+
+            if ($protocolSlug === 'awg2' && empty($serverData['container_name'])) {
+                $serverData['container_name'] = 'amnezia-awg2';
             }
             
             // Fallback: check container_name or config for xray indicators
@@ -2543,7 +2557,16 @@ class VpnClient
             }
 
             if (empty($stats)) {
-                $stats = self::getClientStatsFromServer($serverData, $this->data['public_key']);
+                $stats = self::getClientStatsFromServer(
+                    $serverData,
+                    (string) ($this->data['public_key'] ?? ''),
+                    $protocolSlug
+                );
+            }
+
+            // A failed runtime query must not overwrite valid counters and handshake data with zeroes.
+            if (empty($stats)) {
+                return false;
             }
 
             // Calculate speeds (bytes per second)
@@ -2732,46 +2755,18 @@ class VpnClient
     /**
      * Get client statistics from server
      */
-    private static function getClientStatsFromServer(array $serverData, string $publicKey): array
+    private static function getClientStatsFromServer(array $serverData, string $publicKey, string $protocolSlug = ''): array
     {
-        $containerName = $serverData['container_name'];
-
-        // Get WireGuard interface stats
-        $cmd = sprintf("docker exec -i %s wg show wg0 dump", $containerName);
-        $output = self::executeServerCommand($serverData, $cmd, true);
-
-        $stats = [
-            'bytes_sent' => 0,
-            'bytes_received' => 0,
-            'last_handshake' => 0
-        ];
-
-        // Parse wg dump output
-        // Format: public_key preshared_key endpoint allowed_ips latest_handshake transfer_rx transfer_tx persistent_keepalive
-        // First line is server (private key), skip it
-        // For clients: transfer_rx = bytes received by server (sent by client)
-        //              transfer_tx = bytes sent by server (received by client)
-        $lines = explode("\n", trim($output));
-        foreach ($lines as $line) {
-            if (empty($line))
-                continue;
-
-            $parts = preg_split('/\s+/', trim($line));
-
-            // Skip first line (server) - it has different format
-            if (count($parts) < 7)
-                continue;
-
-            // Match by public key
-            if ($parts[0] === $publicKey) {
-                $stats['last_handshake'] = (int) $parts[4];
-                $stats['bytes_sent'] = (int) $parts[5];      // transfer_rx - client sent
-                $stats['bytes_received'] = (int) $parts[6];  // transfer_tx - client received
-                break;
-            }
+        $cmd = WireGuardStats::buildDumpCommand(
+            $protocolSlug,
+            (string) ($serverData['container_name'] ?? '')
+        );
+        if ($cmd === '') {
+            return [];
         }
 
-        return $stats;
+        $output = self::executeServerCommand($serverData, $cmd, true);
+        return WireGuardStats::parsePeerDump($output, $publicKey) ?? [];
     }
 
     /**
