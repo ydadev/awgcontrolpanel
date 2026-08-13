@@ -45,18 +45,16 @@ This release records the first tested customized control-panel build after the u
 
 ## 🆕 What's New in v2.0.1
 
-This patch release focuses on improving international accessibility with comprehensive documentation in Russian and Chinese, making the panel more accessible to users worldwide.
+This patch release focuses on improving international accessibility with comprehensive Russian documentation.
 
 ### 📄 New Documentation
 - **Russian Documentation** ([`README_RU.md`](README_RU.md)) - Complete translation with all features, API examples, and troubleshooting guides
-- **Chinese Documentation** ([`README_ZH.md`](README_ZH.md)) - Full Chinese translation for better accessibility
 
 ## 🎉 Major Features (from v2.0.0)
 
 ### 🌍 Multi-Language Documentation
 - Added comprehensive Russian documentation ([`README_RU.md`](README_RU.md))
-- Added comprehensive Chinese documentation ([`README_ZH.md`](README_ZH.md))
-- Improves accessibility for Russian and Chinese speaking users
+- Improves accessibility for Russian-speaking users
 
 ### ☁️ Cloudflare WARP Integration
 - New protocol: **Cloudflare WARP Proxy** (`cf-warp`)
@@ -202,7 +200,7 @@ This patch release focuses on improving international accessibility with compreh
 
 ### Fresh Installation
 
-See the installation instructions in [`README.md`](README.md), [`README_RU.md`](README_RU.md), or [`README_ZH.md`](README_ZH.md)
+See the installation instructions in [`README.md`](README.md) or [`README_RU.md`](README_RU.md)
 
 ## 📋 Migration Files (Since v2.0.0)
 
@@ -259,5 +257,4 @@ This release is licensed under the MIT License - see the [`LICENSE`](LICENSE) fi
 
 **Changes since v2.0.0:**
 - Added comprehensive Russian documentation ([`README_RU.md`](README_RU.md))
-- Added comprehensive Chinese documentation ([`README_ZH.md`](README_ZH.md))
 - Updated release notes with multi-language support information
