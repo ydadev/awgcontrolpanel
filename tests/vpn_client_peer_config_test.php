@@ -80,6 +80,49 @@ foreach ([
     }
 }
 
+$mtuMethod = new ReflectionMethod(VpnClient::class, 'applyClientMtuOverride');
+$mtuMethod->setAccessible(true);
+$directAwgConfig = $mtuMethod->invoke(null, $clientConfig, ['client_mtu' => 1280]);
+if (!str_contains($directAwgConfig, 'MTU = 1280') || str_contains($directAwgConfig, 'MTU = 1420')) {
+    fwrite(STDERR, "Per-protocol client MTU override was not applied\n");
+    exit(1);
+}
+
+$quickConfig = <<<'CONF'
+[Interface]
+PrivateKey = server-private-key
+Address = 10.255.44.2/30
+ListenPort = 443
+MTU = 1280
+Table = off
+Jc = 3
+PostUp = /opt/amnezia/awg-egress/up.sh
+PostDown = /opt/amnezia/awg-egress/down.sh
+
+[Peer]
+PublicKey = interserver-peer
+AllowedIPs = 10.255.44.1/32
+
+[Peer]
+PublicKey = direct-client
+AllowedIPs = 10.8.4.2/32
+CONF;
+$setconfMethod = new ReflectionMethod(VpnClient::class, 'buildRuntimeSetconf');
+$setconfMethod->setAccessible(true);
+$runtimeConfig = $setconfMethod->invoke(null, $quickConfig);
+foreach (['Address =', 'MTU =', 'Table =', 'PostUp =', 'PostDown ='] as $forbiddenLine) {
+    if (str_contains($runtimeConfig, $forbiddenLine)) {
+        fwrite(STDERR, "Runtime setconf retained wg-quick directive {$forbiddenLine}\n");
+        exit(1);
+    }
+}
+foreach (['ListenPort = 443', 'Jc = 3', 'interserver-peer', 'direct-client'] as $requiredLine) {
+    if (!str_contains($runtimeConfig, $requiredLine)) {
+        fwrite(STDERR, "Runtime setconf omitted {$requiredLine}\n");
+        exit(1);
+    }
+}
+
 $preferredIpMethod = new ReflectionMethod(VpnClient::class, 'isPreferredClientIp');
 $preferredIpMethod->setAccessible(true);
 foreach (['10.8.2.255', '10.8.3.0'] as $skippedIp) {

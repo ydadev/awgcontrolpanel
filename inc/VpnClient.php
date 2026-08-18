@@ -284,6 +284,8 @@ class VpnClient
                 );
             }
 
+            $config = self::applyClientMtuOverride($config, $serverData);
+
             $qrCode = self::generateQRCode($config, $configSlug);
             self::addClientToServer($serverData, $keys['public'], $clientIP);
             $priv = $keys['private'];
@@ -940,10 +942,18 @@ class VpnClient
             if ($protocolSlug === 'wireguard-standard') {
                 $cmd = 'cat /etc/wireguard/wg0.conf 2>/dev/null';
             } else {
+                $configPath = trim((string) ($serverData['config_path'] ?? ''));
+                if ($configPath === '') {
+                    $configPath = '/opt/amnezia/awg/awg0.conf';
+                }
                 $cmd = sprintf(
                     "docker exec %s sh -c %s",
                     escapeshellarg($containerName),
-                    escapeshellarg('cat /opt/amnezia/awg/awg0.conf 2>/dev/null || cat /opt/amnezia/awg/wg0.conf 2>/dev/null')
+                    escapeshellarg(
+                        'cat ' . escapeshellarg($configPath)
+                        . ' 2>/dev/null || cat /opt/amnezia/awg/awg0.conf 2>/dev/null'
+                        . ' || cat /opt/amnezia/awg/wg0.conf 2>/dev/null'
+                    )
                 );
             }
             $serverConfig = $server->executeCommand($cmd, true);
@@ -1293,6 +1303,22 @@ class VpnClient
                     if (!empty($extras['wireguard_compatible'])) {
                         $serverData['wireguard_compatible'] = true;
                     }
+                    foreach (['container_name', 'interface_name', 'config_path', 'setconf_path', 'dns_servers'] as $configKey) {
+                        $value = $protocolConfig[$configKey] ?? ($extras[$configKey] ?? null);
+                        if (is_string($value) && trim($value) !== '') {
+                            $serverData[$configKey] = trim($value);
+                        }
+                    }
+                    $managedValue = $protocolConfig['managed_existing_interface']
+                        ?? ($extras['managed_existing_interface'] ?? false);
+                    $serverData['managed_existing_interface'] = filter_var(
+                        $managedValue,
+                        FILTER_VALIDATE_BOOLEAN
+                    );
+                    $clientMtu = (int) ($protocolConfig['client_mtu'] ?? ($extras['client_mtu'] ?? 0));
+                    if ($clientMtu >= 576 && $clientMtu <= 9000) {
+                        $serverData['client_mtu'] = $clientMtu;
+                    }
                 }
             } catch (Exception $e) {
                 error_log('applyProtocolServerData config_data load failed: ' . $e->getMessage());
@@ -1324,8 +1350,19 @@ class VpnClient
             $isAwg2c = (stripos($cont, 'awg2') !== false || $slug === 'awg2');
             $confName = $isAwg2c ? 'awg0.conf' : 'wg0.conf';
             $dir = '/opt/amnezia/awg';
+            $configPath = trim((string) ($serverData['config_path'] ?? ''));
+            if ($configPath === '') {
+                $configPath = $dir . '/' . $confName;
+            }
+            $ifaceName = trim((string) ($serverData['interface_name'] ?? ''));
+            if ($ifaceName === '') {
+                $ifaceName = pathinfo($configPath, PATHINFO_FILENAME);
+            }
             $contArg = escapeshellarg($cont);
-            $readConf = escapeshellarg("cat {$dir}/{$confName} 2>/dev/null || cat {$dir}/wg0.conf 2>/dev/null || cat {$dir}/awg0.conf 2>/dev/null");
+            $readConf = escapeshellarg(
+                'cat ' . escapeshellarg($configPath)
+                . " 2>/dev/null || cat {$dir}/wg0.conf 2>/dev/null || cat {$dir}/awg0.conf 2>/dev/null"
+            );
             $conf = trim((string) $server->executeCommand("docker exec -i {$contArg} sh -c {$readConf}", true));
             if (strpos($conf, '[Interface]') !== false) {
                 if (preg_match('/^\s*ListenPort\s*=\s*(\d+)/mi', $conf, $mp)) {
@@ -1344,8 +1381,29 @@ class VpnClient
                     $serverData['awg_params'] = json_encode($params);
                 }
             }
+            if ($ifaceName !== '') {
+                $runtimeScript = sprintf(
+                    'tool=$(command -v %s || command -v wg || true); [ -n "$tool" ] || exit 0; printf "public_key="; "$tool" show %s public-key 2>/dev/null; printf "listen_port="; "$tool" show %s listen-port 2>/dev/null',
+                    $isAwg2c ? 'awg' : 'wg',
+                    escapeshellarg($ifaceName),
+                    escapeshellarg($ifaceName)
+                );
+                $runtime = trim((string) $server->executeCommand(
+                    "docker exec -i {$contArg} sh -lc " . escapeshellarg($runtimeScript),
+                    true
+                ));
+                if (preg_match('/^public_key=([^\s]+)$/mi', $runtime, $keyMatch)) {
+                    $serverData['server_public_key'] = trim($keyMatch[1]);
+                }
+                if (preg_match('/^listen_port=(\d+)$/mi', $runtime, $portMatch)) {
+                    $runtimePort = (int) $portMatch[1];
+                    if ($runtimePort >= 1 && $runtimePort <= 65535) {
+                        $serverData['vpn_port'] = $runtimePort;
+                    }
+                }
+            }
             $pub = trim((string) $server->executeCommand("docker exec -i {$contArg} cat {$dir}/wireguard_server_public_key.key 2>/dev/null", true));
-            if (strlen($pub) >= 40 && strpos($pub, ' ') === false) {
+            if (empty($serverData['server_public_key']) && strlen($pub) >= 40 && strpos($pub, ' ') === false) {
                 $serverData['server_public_key'] = $pub;
             }
             $psk = trim((string) $server->executeCommand("docker exec -i {$contArg} cat {$dir}/wireguard_psk.key 2>/dev/null", true));
@@ -1454,6 +1512,25 @@ class VpnClient
         return $config;
     }
 
+    private static function applyClientMtuOverride(string $config, array $serverData): string
+    {
+        $mtu = (int) ($serverData['client_mtu'] ?? 0);
+        if ($mtu < 576 || $mtu > 9000 || strpos($config, '[Interface]') === false) {
+            return $config;
+        }
+
+        if (preg_match('/^[ \t]*MTU[ \t]*=.*$/mi', $config)) {
+            return (string) preg_replace('/^[ \t]*MTU[ \t]*=.*$/mi', 'MTU = ' . $mtu, $config, 1);
+        }
+
+        return (string) preg_replace(
+            '/^(\[Interface\][ \t]*\r?\n)/m',
+            '$1MTU = ' . $mtu . "\n",
+            $config,
+            1
+        );
+    }
+
     /**
      * WireGuard client configs must contain a numeric endpoint so they do not
      * depend on client-side DNS availability while establishing the tunnel.
@@ -1496,15 +1573,26 @@ class VpnClient
         $configDir = '/opt/amnezia/awg';
         $presharedKey = (string) ($serverData['preshared_key'] ?? '');
 
-        if ($protocolSlug === 'wireguard-standard') {
-            $publicKey = trim($publicKey);
-            if ($publicKey === '') {
-                throw new Exception('Refusing to add client with empty public key');
-            }
-            if ($presharedKey === '') {
-                throw new Exception('Refusing to add WireGuard client without preshared key');
-            }
+        $publicKey = trim($publicKey);
+        if ($publicKey === '') {
+            throw new Exception('Refusing to add client with empty public key');
+        }
+        if ($presharedKey === '') {
+            throw new Exception('Refusing to add WireGuard client without preshared key');
+        }
 
+        if (self::usesManagedExistingInterface($serverData)) {
+            $config = self::readManagedInterfaceConfig($serverData);
+            $config = self::removeConflictingPeersFromConfig($config, $publicKey, $clientIP);
+            $peerBlock = "\n[Peer]\n";
+            $peerBlock .= "PublicKey = {$publicKey}\n";
+            $peerBlock .= "PresharedKey = {$presharedKey}\n";
+            $peerBlock .= "AllowedIPs = {$clientIP}/32\n";
+            self::syncManagedInterfaceConfig($serverData, rtrim($config) . $peerBlock);
+            return;
+        }
+
+        if ($protocolSlug === 'wireguard-standard') {
             $server = new VpnServer((int) ($serverData['id'] ?? 0));
             $config = (string) $server->executeCommand('cat /etc/wireguard/wg0.conf', true);
             if (strpos($config, '[Interface]') === false) {
@@ -1539,12 +1627,6 @@ class VpnClient
         }
         // Interface name matches config filename (wg0.conf -> wg0, awg0.conf -> awg0)
         $ifaceName = str_replace('.conf', '', $configFile);
-
-        $publicKey = trim($publicKey);
-
-        if ($publicKey === '') {
-            throw new Exception('Refusing to add client with empty public key');
-        }
 
         // 1. Create temp file for PSK (to avoid shell escaping issues)
         $pskFile = '/tmp/' . bin2hex(random_bytes(8)) . '.psk';
@@ -1594,6 +1676,89 @@ class VpnClient
         );
         $cmd5 = sprintf("docker exec -i %s sh -lc %s", escapeshellarg($containerName), escapeshellarg($reloadScript));
         self::executeServerCommand($serverData, $cmd5, true);
+    }
+
+    private static function usesManagedExistingInterface(array $serverData): bool
+    {
+        return filter_var(
+            $serverData['managed_existing_interface'] ?? false,
+            FILTER_VALIDATE_BOOLEAN
+        );
+    }
+
+    private static function readManagedInterfaceConfig(array $serverData): string
+    {
+        $containerName = trim((string) ($serverData['container_name'] ?? ''));
+        $configPath = trim((string) ($serverData['config_path'] ?? ''));
+        if ($containerName === '' || $configPath === '') {
+            throw new Exception('Managed WireGuard interface settings are incomplete');
+        }
+
+        $command = sprintf(
+            'docker exec -i %s cat %s',
+            escapeshellarg($containerName),
+            escapeshellarg($configPath)
+        );
+        $config = (string) self::executeServerCommand($serverData, $command, true);
+        if (strpos($config, '[Interface]') === false) {
+            throw new Exception('Managed WireGuard interface configuration is unavailable');
+        }
+
+        return $config;
+    }
+
+    private static function buildRuntimeSetconf(string $config): string
+    {
+        $runtimeConfig = preg_replace(
+            '/^[ \t]*(Address|DNS|MTU|Table|PreUp|PostUp|PreDown|PostDown|SaveConfig)[ \t]*=.*(?:\r?\n|$)/mi',
+            '',
+            $config
+        );
+
+        return rtrim((string) $runtimeConfig) . "\n";
+    }
+
+    private static function syncManagedInterfaceConfig(array $serverData, string $config): void
+    {
+        $containerName = trim((string) ($serverData['container_name'] ?? ''));
+        $interfaceName = trim((string) ($serverData['interface_name'] ?? ''));
+        $configPath = trim((string) ($serverData['config_path'] ?? ''));
+        $setconfPath = trim((string) ($serverData['setconf_path'] ?? ''));
+        if ($setconfPath === '' && $configPath !== '') {
+            $setconfPath = dirname($configPath) . '/' . pathinfo($configPath, PATHINFO_FILENAME) . '.setconf';
+        }
+        if ($containerName === '' || $interfaceName === '' || $configPath === '' || $setconfPath === '') {
+            throw new Exception('Managed WireGuard interface settings are incomplete');
+        }
+
+        $runtimeConfig = self::buildRuntimeSetconf($config);
+        $script = "set -eu\n";
+        $script .= 'config_path=' . escapeshellarg($configPath) . "\n";
+        $script .= 'setconf_path=' . escapeshellarg($setconfPath) . "\n";
+        $script .= 'interface_name=' . escapeshellarg($interfaceName) . "\n";
+        $script .= 'config_tmp="${config_path}.new.$$"' . "\n";
+        $script .= 'setconf_tmp="${setconf_path}.new.$$"' . "\n";
+        $script .= 'trap \'rm -f "$config_tmp" "$setconf_tmp"\' EXIT' . "\n";
+        $script .= 'printf %s ' . escapeshellarg(base64_encode(rtrim($config) . "\n")) . ' | base64 -d > "$config_tmp"' . "\n";
+        $script .= 'printf %s ' . escapeshellarg(base64_encode($runtimeConfig)) . ' | base64 -d > "$setconf_tmp"' . "\n";
+        $script .= 'chmod 600 "$config_tmp" "$setconf_tmp"' . "\n";
+        $script .= 'tool=$(command -v awg || command -v wg || true)' . "\n";
+        $script .= '[ -n "$tool" ] || { echo wireguard_tool_not_found; exit 1; }' . "\n";
+        $script .= '"$tool" syncconf "$interface_name" "$setconf_tmp"' . "\n";
+        $script .= 'mv "$config_tmp" "$config_path"' . "\n";
+        $script .= 'mv "$setconf_tmp" "$setconf_path"' . "\n";
+        $script .= "trap - EXIT\n";
+        $script .= "printf '__AWG_PANEL_OK__\\n'\n";
+
+        $command = sprintf(
+            'docker exec -i %s sh -lc %s',
+            escapeshellarg($containerName),
+            escapeshellarg($script)
+        );
+        $output = (string) self::executeServerCommand($serverData, $command, true);
+        if (strpos($output, '__AWG_PANEL_OK__') === false) {
+            throw new Exception('Failed to synchronize managed WireGuard interface: ' . trim($output));
+        }
     }
 
     /**
@@ -1932,6 +2097,13 @@ class VpnClient
         $containerName = $serverData['container_name'];
         $protocolSlug = (string) ($serverData['install_protocol'] ?? '');
 
+        if (self::usesManagedExistingInterface($serverData)) {
+            $config = self::readManagedInterfaceConfig($serverData);
+            $newConfig = self::removePeerFromConfig($config, trim($publicKey));
+            self::syncManagedInterfaceConfig($serverData, $newConfig);
+            return;
+        }
+
         if ($protocolSlug === 'wireguard-standard') {
             $server = new VpnServer((int) ($serverData['id'] ?? 0));
             $config = (string) $server->executeCommand('cat /etc/wireguard/wg0.conf', true);
@@ -2062,11 +2234,11 @@ class VpnClient
     private static function removeConflictingPeersFromConfig(string $config, string $publicKey, string $clientIP): string
     {
         $targetCidr = trim($clientIP) . '/32';
-        $sections = preg_split('/(?=^\[[^\]\r\n]+\][ \t]*$)/m', $config) ?: [$config];
+        $sections = preg_split('/(?=^\[[^\]\r\n]+\][ \t]*\r?$)/m', $config) ?: [$config];
         $kept = [];
 
         foreach ($sections as $section) {
-            if (!preg_match('/^\[Peer\][ \t]*$/m', $section)) {
+            if (!preg_match('/^\[Peer\][ \t]*\r?$/m', $section)) {
                 $kept[] = $section;
                 continue;
             }
@@ -2328,6 +2500,8 @@ class VpnClient
             );
         }
 
+        $config = self::applyClientMtuOverride($config, $serverData);
+
         $qrCode = self::generateQRCode($config, $configSlug);
 
         $pdo = DB::conn();
@@ -2456,7 +2630,7 @@ class VpnClient
             $xrayContainerName = 'amnezia-xray'; // Default XRay container name
             
             if (!empty($this->data['protocol_id'])) {
-                $stmtProto = $pdo->prepare('SELECT slug, definition FROM protocols WHERE id = ?');
+                $stmtProto = $pdo->prepare('SELECT id, slug, definition FROM protocols WHERE id = ?');
                 $stmtProto->execute([$this->data['protocol_id']]);
                 $protoData = $stmtProto->fetch();
                 if ($protoData) {
@@ -2472,6 +2646,24 @@ class VpnClient
                     $statsContainer = trim((string) ($definition['metadata']['container_name'] ?? ''));
                     if ($statsContainer !== '') {
                         $serverData['container_name'] = $statsContainer;
+                    }
+
+                    $stmtProtocolConfig = $pdo->prepare(
+                        'SELECT config_data FROM server_protocols WHERE server_id = ? AND protocol_id = ? LIMIT 1'
+                    );
+                    $stmtProtocolConfig->execute([
+                        (int) ($this->data['server_id'] ?? 0),
+                        (int) ($protoData['id'] ?? 0),
+                    ]);
+                    $statsConfig = json_decode((string) $stmtProtocolConfig->fetchColumn(), true);
+                    if (is_array($statsConfig)) {
+                        $statsExtras = is_array($statsConfig['extras'] ?? null) ? $statsConfig['extras'] : [];
+                        $configuredContainer = trim((string) (
+                            $statsConfig['container_name'] ?? ($statsExtras['container_name'] ?? '')
+                        ));
+                        if ($configuredContainer !== '') {
+                            $serverData['container_name'] = $configuredContainer;
+                        }
                     }
                 }
             }
