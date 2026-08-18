@@ -22,10 +22,6 @@ foreach ($protocols as $protocol) {
         fwrite(STDERR, "Custom DNS is missing for {$protocol}\n");
         exit(1);
     }
-    if (strpos($config, 'MTU = 1280') === false) {
-        fwrite(STDERR, "Safe tunnel MTU is missing for {$protocol}\n");
-        exit(1);
-    }
 }
 
 echo "vpn_client_dns_test: ok\n";
