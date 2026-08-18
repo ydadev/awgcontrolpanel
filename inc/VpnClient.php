@@ -1381,6 +1381,7 @@ class VpnClient
         $config = "[Interface]\n";
         $config .= "Address = {$clientIP}/32\n";
         $config .= "DNS = {$dnsServers}\n";
+        $config .= "MTU = 1420\n";
         $config .= "PrivateKey = {$privateKey}\n";
 
         $usesAwgParams = in_array($protocolSlug, ['amnezia-wg', 'amnezia-wg-advanced', 'awg2'], true);
