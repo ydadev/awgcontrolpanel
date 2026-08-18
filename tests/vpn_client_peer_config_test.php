@@ -70,6 +70,7 @@ $clientConfig = VpnClient::buildClientConfig(
 );
 foreach ([
     'DNS = 10.10.11.192, 8.8.8.8, 77.88.8.8',
+    'MTU = 1280',
     'AllowedIPs = 0.0.0.0/0, ::/0',
     'Endpoint = 203.0.113.10:51835',
 ] as $expectedLine) {
