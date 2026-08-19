@@ -1,3 +1,16 @@
+# Unreleased - 2026-08-19
+
+## Dynamic routing module
+
+- Replaced the fixed shared-route editor with a per-source-server module that can be enabled or disabled.
+- Added multiple prioritized egress paths with domain suffix/wildcard rules and explicit IPv4/CIDR rules.
+- Added transparent `dnsmasq` forwarding and RAM-backed `nftset`/`ipset` sets populated from DNS A-record answers.
+- Added policy tables, fwmarks, per-path NAT/MSS handling, bridge-container DNS interception, systemd recovery, node-local backups, and rollback on failed first apply.
+- Migration `089` copies existing route targets and all CIDRs into disabled dynamic modules without changing live routing.
+- Added Russian architecture, operations, security and testing documentation for the new module.
+
+---
+
 # Unreleased - 2026-07-28
 
 ## Shared routing

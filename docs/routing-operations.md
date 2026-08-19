@@ -1,45 +1,49 @@
-# Routing Operations
+# Эксплуатация динамической маршрутизации
 
-## Editing routes
+## Настройка
 
-1. Sign in as an administrator.
-2. Open `Routing`.
-3. Select the `Routes` tab.
-4. Edit the destination list under `kazan1 -> vienna2` or `kazan1 -> office1`.
-5. Enter one IPv4 address or CIDR per line. A plain address is normalized to `/32`.
-6. Select `Save and apply`.
-7. Confirm that the target status is `Applied` and the route count is correct.
+1. Откройте `Маршруты` и выберите исходный сервер.
+2. Укажите DNS upstream, доступный с управляемого сервера.
+3. Проверьте существующие выходные интерфейсы и их приоритеты.
+4. Внесите доменные шаблоны и/или IPv4/CIDR в нужные направления.
+5. Включите модуль и выберите `Сохранить и применить`.
 
-Saving changes the live packet path. Take a database dump and back up the route/config files on the source node before a large replacement.
+Сохранение одного направления применяет конфигурацию всего модуля. Это гарантирует согласованный порядок приоритетов.
 
-## Groups
+## Доменные правила
 
-The `Groups` tab is informational in the shared model. `default` is the only active routing group, all users belong to it, and new users are assigned by a database trigger. `Synchronize` repairs membership if records were imported manually.
+- `example.com` совпадает с доменом и поддоменами.
+- `*.example.com` совпадает только с поддоменами.
+- `*.com` совпадает с запрошенными именами внутри `.com`.
+- Меньший числовой приоритет направления выигрывает при пересечении.
 
-## Validation
+IP общего CDN может временно присутствовать в нескольких наборах. В таком случае выбирается первое направление, чей set содержит адрес. Узкие доменные правила следует располагать выше широких зон.
 
-After applying either list, verify:
+## CIDR
 
-1. desired and applied hashes match in `routing_route_targets`;
-2. the persistent route file count and SHA-256 hash match the panel;
-3. representative destinations resolve to the expected interface with `ip route get`;
-4. the inter-server tunnel has a recent handshake;
-5. forwarding and NAT counters increase for test traffic;
-6. routes recover after the relevant tunnel/container restart.
+CIDR не зависит от DNS и действует сразу после применения. Частные сети разрешены только как явные CIDR-правила; нужные внутренние сети и одиночные адреса указываются в направлении явно.
 
-For `office1`, also verify the peer `AllowedIPs`, the managed `PostUp`/`PostDown` hooks, and access to the office network.
+## Включение и отключение
 
-For `vienna2`, verify the `awg-egress` ready marker, MTU/MSS rules, public egress address, HTTPS access, and packet loss with small and near-MTU probes.
+При включении модуль устанавливает `dnsmasq`, если он отсутствует, создает policy rules и переводит управляемые WG/AWG peers в режим `AllowedIPs = 0.0.0.0/0`, `Table = off`.
 
-## Failure behavior
+При отключении удаляются DNS-перехват, marks, nftables table и policy tables. Основной default route сервера не изменяется. Конфигурации peers остаются с `Table = off` и сами по себе трафик не перехватывают.
 
-- Invalid or empty lists are rejected before SSH execution.
-- A stale browser edit is rejected by its expected hash.
-- Concurrent applies to the same target are serialized.
-- New routes are installed before stale routes are removed.
-- A missing interface, missing config, multiple office peers, SSH failure, or hash mismatch marks the target `failed`.
-- A failed target keeps the desired database list so the administrator can correct it and apply again.
+## Контроль
 
-## Rollback
+Проверьте на исходном сервере:
 
-Restore the database dump and project archive made before migration `085` to return to the legacy schema behavior. For a route-only rollback, restore the previous route/config files on the source node and bring the affected tunnel back up.
+```bash
+systemctl status dnsmasq awg-dynamic-routing.timer
+nft list table inet awg_policy
+ip rule show
+ip route show table 201
+```
+
+Номер таблицы и mark отображаются рядом с направлением в панели.
+
+Для проверки домена сначала выполните DNS-запрос через VPN-клиента, затем проверьте dynamic set соответствующего направления. Для CIDR DNS-запрос не нужен.
+
+## Восстановление
+
+Резервные копии первого переключения находятся в `/opt/awgcontrolpanel/dynamic-routing/backups`. Восстановление должно возвращать одновременно peer-конфиг, legacy route-файл и live AllowedIPs. После аварийного восстановления проверьте handshake, основной маршрут, офисный DNS и оба клиентских протокола.
