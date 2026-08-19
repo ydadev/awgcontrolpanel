@@ -1,23 +1,27 @@
 # Routing Testing
 
-Required control-plane checks:
+Required dynamic-module control-plane checks:
 
-- migration `085` applies twice without changing the result;
-- only `default` remains and its member count equals the user count;
-- new users are assigned to `default`;
-- legacy profiles, personal lists, permissions, pending revisions, and delivery jobs are removed or superseded;
+- migration `089` copies every legacy target and CIDR, leaves modules disabled, and is idempotent;
 - PHP, Twig, and generated shell syntax checks pass;
 - regular users cannot open route management or the routing status API;
-- IPv4 CIDRs normalize and deduplicate correctly, while empty/invalid/IPv6 lists are rejected;
-- stale expected hashes and concurrent apply locks are enforced;
+- domain wildcards and IPv4 CIDRs normalize and deduplicate correctly;
+- stale path hashes and concurrent module applies are rejected;
+- generated nftables configuration accepts nested CIDR using `auto-merge`;
+- dnsmasq backend selection rejects `no-nftset` and falls back to RAM-backed `ipset`;
+- a live DNS answer populates the selected dynamic set and resolves through the expected marked policy table;
+- DNS resolver configuration never binds the public interface;
 - desired/applied hashes and statuses change correctly on success and failure.
 
-Required data-plane checks for each target:
+Required data-plane checks for each module/path:
 
-- persistent list count/hash;
-- live kernel route count and representative route lookups;
+- DNS passthrough response equality through the configured upstream;
+- domain lookup insertion and TTL expiry in the expected nft set;
+- static CIDR and domain priority overlaps;
+- `ip rule`, policy-table default route and marked route lookup;
 - tunnel/interface and handshake health;
 - forwarding/NAT counters;
 - client DNS, office access, domestic/direct traffic, overseas egress, HTTPS, packet loss, and MTU behavior;
 - route recovery after tunnel/container and source-node restart;
-- restoration from the pre-change database and route/config backups.
+- disabling and re-enabling the module;
+- restoration from the pre-change database and node-local peer/route backups.

@@ -1,44 +1,41 @@
-# Routing Architecture
+# Архитектура маршрутизации
 
-The active routing model is shared and administrator-managed. It is not tied to a user, VPN connection, or personal IP list.
+Активная модель состоит из включаемого модуля на исходном VPN-сервере, выходных направлений и правил совпадения. Она не привязана к пользователю или отдельному VPN-подключению.
 
-## Default group
+## Сущности
 
-- Migration `085_create_shared_route_targets.sql` removes legacy profiles, individual/group link permissions, personal route lists, and old memberships.
-- One system group named `default` remains.
-- Every existing user is assigned to `default`.
-- A database trigger assigns every newly created user to `default`.
-- Regular users do not receive a routing menu or route-editing endpoint.
+`routing_policy_modules` хранит настройки прозрачного DNS, TTL RAM-наборов и состояние применения для исходного сервера.
 
-## Route targets
+`routing_policy_paths` описывает существующий выходной интерфейс, сервер назначения, приоритет, policy table, `fwmark`, peer-конфигурацию и TCP MSS.
 
-`routing_route_targets` binds one editable IPv4 list to:
+`routing_policy_rules` содержит доменные шаблоны и IPv4/CIDR. IP, полученные при разрешении доменов, в БД не записываются.
 
-- the `default` group;
-- the source routing ingress;
-- a destination/interface;
-- an apply strategy and persistent route-list file;
-- desired/applied hashes, status, error, and apply timestamp.
+Миграция `089_create_dynamic_routing_module.sql` создает выключенный модуль для каждого сервера со старыми route targets, переносит направления и все CIDR. Старые таблицы сохраняются для контролируемого перехода и восстановления.
 
-The current deployment has two targets:
+## Узел
 
-| Source | Destination | Transport | Interface | Apply strategy |
-|---|---|---|---|---|
-| `kazan1` | `vienna2` | AmneziaWG 2.0, UDP 443 | `awg-egress` | Linux route file |
-| `kazan1` | `office1` | WireGuard, UDP 51835 | `office1` | WireGuard config |
+На управляемом сервере модуль создает:
 
-The Vienna target atomically replaces `/opt/amnezia/awg-egress/routes.txt`, adds new routes before removing stale routes, and verifies the file hash.
+- `/etc/dnsmasq.d/90-awg-policy.conf` с upstream и правилами выбранного `nftset`/`ipset` backend;
+- `/etc/dnsmasq.d/91-awg-policy-listen.conf` только для VPN/bridge интерфейсов;
+- `table inet awg_policy` с static/dynamic sets, marks, NAT и MSS;
+- отдельную route table для каждого выходного направления;
+- `awg-dynamic-routing.service` и минутный refresh timer;
+- DNS DNAT внутри bridge-контейнеров, чьи VPN-интерфейсы не видны на хосте.
 
-The office target updates the managed route file, the peer `AllowedIPs`, persistent `PostUp`/`PostDown` hooks, live kernel routes, and the required source NAT rules. The service requires exactly one peer on the managed interface and verifies the written list hash.
+Статические CIDR проверяются раньше запрета динамических private/reserved IP, поэтому явно заданная внутренняя сеть работает, а случайный private IP из ответа широкого правила `*.com` не уйдет во внешний туннель.
 
-## Apply flow
+## Применение
 
-1. The administrator submits one IPv4 CIDR per line.
-2. The panel normalizes and deduplicates the list.
-3. An optimistic hash rejects a stale browser edit.
-4. The desired list is saved and marked `pending`.
-5. A per-target database advisory lock serializes apply operations.
-6. The list is applied over the server's existing SSH management connection.
-7. The panel records the applied hash, timestamp, audit event, and synchronous revision.
+1. Вход проверяется и нормализуется.
+2. В транзакции заменяются правила и вычисляется desired hash.
+3. Advisory lock блокирует параллельное применение того же модуля.
+4. Генерируются и проверяются nftables, dnsmasq и shell-артефакты.
+5. На узле создается закрытая резервная копия.
+6. Выходные peers переключаются на `AllowedIPs = 0.0.0.0/0` при `Table = off`.
+7. После загрузки policy tables старые маршруты удаляются из `main` и route-файлы очищаются.
+8. Состояние и hash записываются в БД и audit log.
 
-Legacy worker/scheduler containers remain compatible with existing Compose installations, but become passive after shared-route migration `085`.
+При ошибке текущие peer-конфигурации, AllowedIPs и старые маршруты восстанавливаются из резервной копии.
+
+Подробности эксплуатации: [dynamic-routing.md](dynamic-routing.md) и [routing-operations.md](routing-operations.md).

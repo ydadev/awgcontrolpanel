@@ -93,6 +93,10 @@ Current application changes tested on 2026-07-10:
 - routing is shared rather than user-specific: all existing and new users are members of the system `default` group;
 - administrators edit and directly apply the two current route destinations, `kazan1 -> vienna2` and `kazan1 -> office1`, while regular users have no route-management UI;
 - the legacy profile, individual permission, personal list, and asynchronous revision paths are disabled after migration `085`;
+- migration `089` replaces the fixed shared-route editor with an optional dynamic-routing module per source server;
+- each module supports multiple prioritized egress interfaces, DNS domain patterns and explicit IPv4/CIDR rules;
+- resolved A-record addresses are kept in kernel RAM sets (`nftset` or automatic `ipset` fallback) while dnsmasq transparently forwards client DNS to configured upstream resolvers;
+- existing `kazan1 -> vienna2` and `kazan1 -> office1` CIDRs migrate without enabling or changing the live node until an administrator explicitly applies the module;
 
 Current release target on 2026-07-20:
 

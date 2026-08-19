@@ -14,7 +14,8 @@ class RoutingApiController
 
         echo json_encode([
             'success' => true,
-            'stats' => RoutingRepository::dashboard(),
+            'stats' => DynamicRoutingModuleService::dashboard(),
+            'modules' => DynamicRoutingModuleService::listForAdmin(),
         ]);
     }
 

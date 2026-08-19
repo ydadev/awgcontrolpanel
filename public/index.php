@@ -51,6 +51,8 @@ require_once __DIR__ . '/../inc/Routing/RoutingPermissionService.php';
 require_once __DIR__ . '/../inc/Routing/RoutingRepository.php';
 require_once __DIR__ . '/../inc/Routing/RoutingCompiler.php';
 require_once __DIR__ . '/../inc/Routing/RoutingRouteTargetService.php';
+require_once __DIR__ . '/../inc/Routing/DynamicRoutingCompiler.php';
+require_once __DIR__ . '/../inc/Routing/DynamicRoutingModuleService.php';
 
 // Load environment configuration
 Config::load(__DIR__ . '/../.env');
@@ -4467,16 +4469,29 @@ Router::get('/routing', function () {
     $controller->index();
 });
 
-Router::post('/routing/targets/{target_id}/save-apply', function ($params) {
+Router::post('/routing/modules/create', function () {
     require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    $controller = new AdminRoutingController();
-    $controller->saveAndApplyTarget((int) $params['target_id']);
+    (new AdminRoutingController())->createModule();
 });
 
-Router::post('/routing/groups/default/sync', function () {
+Router::post('/routing/modules/{module_id}/save-apply', function ($params) {
     require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    $controller = new AdminRoutingController();
-    $controller->syncDefaultGroup();
+    (new AdminRoutingController())->saveModule((int) $params['module_id']);
+});
+
+Router::post('/routing/modules/{module_id}/apply', function ($params) {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    (new AdminRoutingController())->applyModule((int) $params['module_id']);
+});
+
+Router::post('/routing/modules/{module_id}/paths/create', function ($params) {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    (new AdminRoutingController())->createPath((int) $params['module_id']);
+});
+
+Router::post('/routing/paths/{path_id}/save-apply', function ($params) {
+    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
+    (new AdminRoutingController())->savePath((int) $params['path_id']);
 });
 
 Router::get('/my/routes', function () {

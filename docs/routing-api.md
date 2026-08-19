@@ -6,6 +6,6 @@ The shared routing model currently exposes one read-only endpoint:
 GET /api/routing/status
 ```
 
-It returns aggregate target/group status and requires an authenticated administrator.
+It returns aggregate module/path status and requires an authenticated administrator.
 
-Route-list writes are intentionally available only through the administrator web form, which includes CSRF validation and an optimistic edit hash. The legacy endpoint that created asynchronous server revisions was removed when migration `085` introduced direct shared-route application.
+Module, path, domain and CIDR writes are intentionally available only through the administrator web form. Forms use CSRF validation, optimistic edit hashes and a per-module database advisory lock. Applying one path recompiles and applies the whole server module so priorities cannot be partially updated.
