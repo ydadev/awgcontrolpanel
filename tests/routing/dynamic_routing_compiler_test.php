@@ -112,7 +112,6 @@ foreach ([
         exit(1);
     }
 }
-
 $dnsmasqIpSet = DynamicRoutingCompiler::compileDnsmasq($module, 'ipset');
 foreach ([
     'ipset=/*.youtube.com/awg_p12_dynamic4',
@@ -141,16 +140,15 @@ foreach ([
     'ipset destroy "$set_name"',
     'AWG_POLICY_DYNAMIC',
     '--set-xmark 0x440c/0xffffffff',
-    'AWG_POLICY_DNS_GUARD',
-    '-d 192.0.2.53 -p udp -m udp --dport 443 -j REJECT',
-    '-d 8.8.8.8 -p tcp -m tcp --dport 443 -j REJECT --reject-with tcp-reset',
-    '-p tcp -m tcp --dport 853 -j REJECT --reject-with tcp-reset',
-    '--dports 784,8853 -j REJECT',
 ] as $needle) {
     if (!str_contains($refresh, $needle)) {
         fwrite(STDERR, 'Generated refresh script omits ipset fallback: ' . $needle . PHP_EOL);
         exit(1);
     }
+}
+if (!str_contains($refresh, 'iptables -X AWG_POLICY_DNS_GUARD 2>/dev/null || true')) {
+    fwrite(STDERR, 'Generated refresh script does not clean up obsolete DNS guard chains' . PHP_EOL);
+    exit(1);
 }
 
 $module['paths'][0]['peer_config_path'] = '/etc/wireguard/office1.conf';
