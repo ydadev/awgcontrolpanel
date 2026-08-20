@@ -221,10 +221,10 @@
           {% endif %}
         </div>
         <div>
-          <input name="name" placeholder="Название подключения" required class="w-full px-3 py-2 border rounded" id="clientName">
-        </div>
-        <div>
-          <input name="login" placeholder="VPN логин (уникально на сервере, пусто - из названия)" class="w-full px-3 py-2 border rounded" id="clientLogin">
+          <label for="clientName" class="block text-sm text-gray-600 mb-1">Название подключения</label>
+          <input name="name" type="text" placeholder="Например: work_laptop" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" autocomplete="off" class="w-full px-3 py-2 border rounded" id="clientName" aria-describedby="clientNameHint clientNameError">
+          <p id="clientNameHint" class="mt-1 text-xs text-gray-500">Латинские буквы, цифры, «_» и «-». Первый символ — буква или цифра.</p>
+          <p id="clientNameError" class="mt-1 text-sm text-red-600 hidden" role="alert">Название подключения должно содержать от 1 до 64 символов: латинские буквы, цифры, «_» или «-». Первый символ должен быть буквой или цифрой.</p>
         </div>
         <div>
           <label class="block text-sm text-gray-600 mb-1">{{ t('ai.protocol_type') }}</label>
@@ -674,20 +674,40 @@ function toggleTrafficInput() {
 document.addEventListener('DOMContentLoaded', function() {
   const form = document.getElementById('createClientForm');
   const clientNameInput = document.getElementById('clientName');
-  
-  const clientLoginInput = document.getElementById('clientLogin');
-  if (clientLoginInput) {
-    clientLoginInput.addEventListener('input', function(e) {
-      let value = e.target.value;
-      let sanitized = value.replace(/\s+/g, '_');
-      if (value !== sanitized) {
-        e.target.value = sanitized;
+  const clientNameError = document.getElementById('clientNameError');
+  const connectionNamePattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+  function validateConnectionName() {
+    if (!clientNameInput) return true;
+
+    const name = clientNameInput.value;
+    const isValid = connectionNamePattern.test(name);
+    clientNameInput.setCustomValidity(isValid ? '' : 'Используйте от 1 до 64 символов: латинские буквы, цифры, «_» или «-». Первый символ должен быть буквой или цифрой.');
+    if (clientNameError) {
+      clientNameError.classList.toggle('hidden', isValid);
+    }
+
+    return isValid;
+  }
+
+  if (clientNameInput) {
+    clientNameInput.addEventListener('input', function() {
+      if (clientNameInput.value === '' || validateConnectionName()) {
+        clientNameInput.setCustomValidity('');
+        if (clientNameError) clientNameError.classList.add('hidden');
       }
     });
   }
   
   if (form) {
     form.addEventListener('submit', function(e) {
+      if (!validateConnectionName()) {
+        e.preventDefault();
+        clientNameInput.reportValidity();
+        clientNameInput.focus();
+        return;
+      }
+
       const btn = document.getElementById('createClientBtn');
       const text = document.getElementById('createClientText');
       const spinner = document.getElementById('createClientSpinner');

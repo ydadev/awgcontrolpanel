@@ -9,6 +9,8 @@ require_once __DIR__ . '/WireGuardStats.php';
  */
 class VpnClient
 {
+    public const CONNECTION_NAME_ERROR = 'Название подключения должно содержать от 1 до 64 символов: латинские буквы, цифры, "_" или "-". Первый символ должен быть буквой или цифрой.';
+
     private $clientId;
     private $data;
 
@@ -1510,6 +1512,18 @@ class VpnClient
         $config .= "PersistentKeepalive = 25\n\n";
 
         return $config;
+    }
+
+    /**
+     * Validate a user-entered connection name before provisioning starts.
+     */
+    public static function validateConnectionName(string $name): string
+    {
+        if (!preg_match('/\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\z/D', $name)) {
+            throw new InvalidArgumentException(self::CONNECTION_NAME_ERROR);
+        }
+
+        return $name;
     }
 
     private static function applyClientMtuOverride(string $config, array $serverData): string

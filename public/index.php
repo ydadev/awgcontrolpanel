@@ -1327,9 +1327,8 @@ Router::post('/servers/{id}/delete', function ($params) {
 Router::post('/servers/{id}/clients/create', function ($params) {
     requireAuth();
     $serverId = (int) $params['id'];
-    $clientName = trim($_POST['name'] ?? '');
+    $clientName = (string) ($_POST['name'] ?? '');
     $username = isset($_POST['username']) ? trim($_POST['username']) : '';
-    $login = isset($_POST['login']) ? trim($_POST['login']) : '';
 
     // Handle expiration: either from dropdown (days) or custom input (seconds)
     $expiresInDays = null;
@@ -1350,8 +1349,10 @@ Router::post('/servers/{id}/clients/create', function ($params) {
         $trafficLimitBytes = (int) ((float) $_POST['traffic_limit_gb'] * 1073741824);
     }
 
-    if (empty($clientName)) {
-        redirect('/servers/' . $serverId . '?error=Client+name+is+required');
+    try {
+        $clientName = VpnClient::validateConnectionName($clientName);
+    } catch (InvalidArgumentException $e) {
+        redirect('/servers/' . $serverId . '?error=' . urlencode($e->getMessage()));
         return;
     }
 
@@ -1381,7 +1382,7 @@ Router::post('/servers/{id}/clients/create', function ($params) {
                 $protocolId = null;
             }
         }
-        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $clientName, $expiresInDays, $protocolId, $username, $login);
+        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $clientName, $expiresInDays, $protocolId, $username, $clientName);
 
         // Set traffic limit if specified
         if ($trafficLimitBytes !== null && $trafficLimitBytes > 0) {
@@ -3668,15 +3669,22 @@ Router::post('/api/clients/create', function () {
     $data = json_decode($raw, true);
 
     $serverId = (int) ($data['server_id'] ?? 0);
-    $name = trim($data['name'] ?? '');
+    $name = (string) ($data['name'] ?? '');
     $expiresInDays = isset($data['expires_in_days']) ? (int) $data['expires_in_days'] : null;
     $protocolId = isset($data['protocol_id']) ? (int) $data['protocol_id'] : null;
     $username = isset($data['username']) ? trim((string) $data['username']) : null;
-    $login = isset($data['login']) ? trim((string) $data['login']) : null;
 
-    if ($serverId <= 0 || empty($name)) {
+    if ($serverId <= 0) {
         http_response_code(400);
         echo json_encode(['error' => 'server_id and name are required']);
+        return;
+    }
+
+    try {
+        $name = VpnClient::validateConnectionName($name);
+    } catch (InvalidArgumentException $e) {
+        http_response_code(400);
+        echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
         return;
     }
 
@@ -3705,7 +3713,7 @@ Router::post('/api/clients/create', function () {
             $protocolId = null;
         }
 
-        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $name, $expiresInDays, $protocolId, $username, $login);
+        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $name, $expiresInDays, $protocolId, $username, $name);
 
         $client = new VpnClient($clientId);
 
