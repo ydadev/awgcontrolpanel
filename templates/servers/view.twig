@@ -36,6 +36,30 @@
     min-width: 70px;
     text-align: right;
 }
+.connections-panel {
+    width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+    margin-left: calc(50% - 50vw + 1rem);
+}
+.connections-table th,
+.connections-table td {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+@media (min-width: 640px) {
+    .connections-panel {
+        width: calc(100vw - 3rem);
+        max-width: calc(100vw - 3rem);
+        margin-left: calc(50% - 50vw + 1.5rem);
+    }
+}
+@media (min-width: 1024px) {
+    .connections-panel {
+        width: calc(100vw - 4rem);
+        max-width: calc(100vw - 4rem);
+        margin-left: calc(50% - 50vw + 2rem);
+    }
+}
 </style>
 {% endblock %}
 
@@ -315,11 +339,11 @@
     </div>
   </div>
   {% endif %}
-  <div class="bg-white rounded shadow">
-    <div class="px-6 py-4 border-b flex justify-between items-center">
+  <div class="connections-panel bg-white rounded shadow">
+    <div class="px-4 sm:px-6 py-4 border-b flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
       <h3 class="font-bold">Подключения ({{ clients|length }})</h3>
-      <div class="flex items-center gap-3">
-        <form method="GET" action="/servers/{{ server.id }}" class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-3">
+        <form method="GET" action="/servers/{{ server.id }}" class="flex flex-wrap items-center gap-2">
           <label class="text-sm text-gray-600">{{ t('ai.protocol_type') }}</label>
           <select name="protocol_id" class="px-3 py-2 border rounded" onchange="this.form.submit()">
             <option value="">Все</option>
@@ -337,7 +361,7 @@
     </div>
     {% if clients|length > 0 %}
     <div class="w-full overflow-x-auto">
-    <table class="w-full" style="min-width: 1240px;">
+    <table class="connections-table w-full" style="min-width: 1240px;">
       <thead class="bg-gray-50">
         <tr>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Подключение</th>
