@@ -599,8 +599,14 @@ for container in \$(docker ps --format '{{.Names}}' 2>/dev/null || true); do
     iptables -t nat -D PREROUTING -j AWG_POLICY_DNS 2>/dev/null || true
     iptables -t nat -F AWG_POLICY_DNS 2>/dev/null || true
     iptables -t nat -X AWG_POLICY_DNS 2>/dev/null || true
+    while iptables -D FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null; do :; done
+    iptables -F AWG_POLICY_DNS_GUARD 2>/dev/null || true
+    iptables -X AWG_POLICY_DNS_GUARD 2>/dev/null || true
   ' 2>/dev/null || true
 done
+while iptables -D FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null; do :; done
+iptables -F AWG_POLICY_DNS_GUARD 2>/dev/null || true
+iptables -X AWG_POLICY_DNS_GUARD 2>/dev/null || true
 rm -f /etc/dnsmasq.d/90-awg-policy.conf /etc/dnsmasq.d/91-awg-policy-listen.conf
 if [ -f "\$base/dnsmasq-installed-by-module" ]; then
   systemctl disable --now dnsmasq 2>/dev/null || true
@@ -620,6 +626,18 @@ SH;
             [DynamicRoutingCompiler::class, 'isSafeInterfaceName']
         )));
         $interfaceWords = implode(' ', $interfaces);
+        $dnsInterceptionEnabled = !empty($module['intercept_dns']);
+        $dnsGuardUpstreamLines = '';
+        if ($dnsInterceptionEnabled) {
+            foreach (DynamicRoutingCompiler::parseDnsUpstreams((string) ($module['dns_upstreams'] ?? '')) as $upstream) {
+                $upstreamHost = explode('#', $upstream, 2)[0];
+                $dnsGuardUpstreamLines .= '        iptables -A AWG_POLICY_DNS_GUARD -i "$interface" -d '
+                    . $upstreamHost . ' -p udp -m udp --dport 443 -j REJECT' . "\n";
+                $dnsGuardUpstreamLines .= '        iptables -A AWG_POLICY_DNS_GUARD -i "$interface" -d '
+                    . $upstreamHost . ' -p tcp -m tcp --dport 443 -j REJECT --reject-with tcp-reset' . "\n";
+            }
+        }
+        $dnsGuardEnabled = $dnsInterceptionEnabled ? '1' : '0';
         $hostRoutes = self::hostUpstreamRoutes($module);
         $hostRouteLines = '';
         foreach ($hostRoutes as $host => $interface) {
@@ -655,8 +673,7 @@ SH;
         foreach ($paths as $path) {
             $name = DynamicRoutingCompiler::ipsetName((int) $path['id']);
             $ipsetNames[] = $name;
-            $ipsetCreateLines .= 'ipset create ' . escapeshellarg($name)
-                . ' hash:ip family inet timeout ' . $timeout . ' maxelem 65536 -exist' . "\n";
+            $ipsetCreateLines .= 'ensure_dynamic_set ' . escapeshellarg($name) . ' ' . $timeout . "\n";
             $ipsetRuleLines .= 'iptables -t mangle -A AWG_POLICY_DYNAMIC -m set --match-set '
                 . escapeshellarg($name) . ' dst -j MARK --set-xmark '
                 . sprintf('0x%x', (int) $path['fwmark']) . "/0xffffffff\n";
@@ -689,6 +706,19 @@ cleanup_ipset_backend() {
   for dynamic_set in \$(ipset list -name 2>/dev/null | grep -E '^awg_p[0-9]+_dynamic4$' || true); do
     ipset destroy "\$dynamic_set" 2>/dev/null || true
   done
+}
+
+ensure_dynamic_set() {
+  set_name=\$1
+  set_timeout=\$2
+  if ipset create "\$set_name" hash:ip family inet timeout "\$set_timeout" maxelem 65536 -exist 2>/dev/null; then
+    return
+  fi
+  while iptables -t mangle -D PREROUTING -j AWG_POLICY_DYNAMIC 2>/dev/null; do :; done
+  iptables -t mangle -F AWG_POLICY_DYNAMIC 2>/dev/null || true
+  iptables -t mangle -X AWG_POLICY_DYNAMIC 2>/dev/null || true
+  ipset destroy "\$set_name" 2>/dev/null || true
+  ipset create "\$set_name" hash:ip family inet timeout "\$set_timeout" maxelem 65536
 }
 
 dns_backend=\$(cat "\$base/dns-backend" 2>/dev/null || printf nftset)
@@ -724,6 +754,24 @@ for interface in {$interfaceWords} docker0; do
 done
 iptables -C INPUT -j AWG_POLICY_DNS_IN 2>/dev/null || iptables -I INPUT 1 -j AWG_POLICY_DNS_IN
 
+iptables -N AWG_POLICY_DNS_GUARD 2>/dev/null || true
+iptables -F AWG_POLICY_DNS_GUARD
+dns_guard_found=0
+if [ {$dnsGuardEnabled} -eq 1 ]; then
+  for interface in {$interfaceWords}; do
+    ip link show "\$interface" >/dev/null 2>&1 || continue
+{$dnsGuardUpstreamLines}    iptables -A AWG_POLICY_DNS_GUARD -i "\$interface" -p tcp -m tcp --dport 853 -j REJECT --reject-with tcp-reset
+    iptables -A AWG_POLICY_DNS_GUARD -i "\$interface" -p udp -m udp --dport 853 -j REJECT
+    iptables -A AWG_POLICY_DNS_GUARD -i "\$interface" -p udp -m multiport --dports 784,8853 -j REJECT
+    dns_guard_found=1
+  done
+fi
+if [ "\$dns_guard_found" -eq 1 ]; then
+  iptables -C FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null || iptables -I FORWARD 1 -j AWG_POLICY_DNS_GUARD
+else
+  while iptables -D FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null; do :; done
+fi
+
 for container in \$(docker ps --format '{{.Names}}' 2>/dev/null || true); do
   docker exec "\$container" sh -c '
       set -u
@@ -731,17 +779,30 @@ for container in \$(docker ps --format '{{.Names}}' 2>/dev/null || true); do
       [ -n "\$gateway" ] || exit 0
       iptables -t nat -N AWG_POLICY_DNS 2>/dev/null || true
       iptables -t nat -F AWG_POLICY_DNS
+      iptables -N AWG_POLICY_DNS_GUARD 2>/dev/null || true
+      iptables -F AWG_POLICY_DNS_GUARD
       found=0
       for interface in "\$@"; do
         ip link show "\$interface" >/dev/null 2>&1 || continue
         iptables -t nat -A AWG_POLICY_DNS -i "\$interface" -p udp --dport 53 -j DNAT --to-destination "\$gateway:53"
         iptables -t nat -A AWG_POLICY_DNS -i "\$interface" -p tcp --dport 53 -j DNAT --to-destination "\$gateway:53"
+        if [ {$dnsGuardEnabled} -eq 1 ]; then
+{$dnsGuardUpstreamLines}          iptables -A AWG_POLICY_DNS_GUARD -i "\$interface" -p tcp -m tcp --dport 853 -j REJECT --reject-with tcp-reset
+          iptables -A AWG_POLICY_DNS_GUARD -i "\$interface" -p udp -m udp --dport 853 -j REJECT
+          iptables -A AWG_POLICY_DNS_GUARD -i "\$interface" -p udp -m multiport --dports 784,8853 -j REJECT
+        fi
         found=1
       done
       if [ "\$found" -eq 1 ]; then
         iptables -t nat -C PREROUTING -j AWG_POLICY_DNS 2>/dev/null || iptables -t nat -I PREROUTING 1 -j AWG_POLICY_DNS
+        if [ {$dnsGuardEnabled} -eq 1 ]; then
+          iptables -C FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null || iptables -I FORWARD 1 -j AWG_POLICY_DNS_GUARD
+        else
+          while iptables -D FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null; do :; done
+        fi
       else
         iptables -t nat -D PREROUTING -j AWG_POLICY_DNS 2>/dev/null || true
+        while iptables -D FORWARD -j AWG_POLICY_DNS_GUARD 2>/dev/null; do :; done
       fi
     ' sh {$interfaceWords}
 done
