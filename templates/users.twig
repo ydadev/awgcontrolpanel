@@ -47,6 +47,7 @@
         </div>
         <div class="px-6 py-5">
             <form method="POST" action="/users/add">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('auth.name') }}</label>
@@ -64,10 +65,18 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('users.role') }}</label>
+                        {% if user.role == 'admin' %}
                         <select id="add-user-role" name="role" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                             <option value="user">{{ t('users.role_user') }}</option>
+                            <option value="moderator">{{ t('users.role_moderator') }}</option>
                             <option value="admin">{{ t('users.role_admin') }}</option>
                         </select>
+                        {% else %}
+                        <input id="add-user-role" type="hidden" name="role" value="user">
+                        <div class="block w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-700">
+                            {{ t('users.role_user') }}
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="flex items-center">
                         <label class="inline-flex items-center">
@@ -115,6 +124,7 @@
                 </thead>
                 <tbody id="users-table-body" class="bg-white divide-y divide-gray-200">
                     {% for u in users %}
+                    {% set can_manage_target = user.role == 'admin' or (user.role == 'moderator' and u.role == 'user' and u.id != user.id) %}
                     <tr data-user-row>
                         <td class="px-6 py-4">
                             <div class="flex items-center">
@@ -124,8 +134,20 @@
                         </td>
                         <td data-user-email class="px-6 py-4 text-sm text-gray-500">{{ u.email }}</td>
                         <td class="px-6 py-4">
-                            {% if u.role == 'admin' %}
+                            {% if user.role == 'admin' and u.id != user.id %}
+                            <form method="POST" action="/users/{{ u.id }}/role">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <label class="sr-only" for="user-role-{{ u.id }}">Роль пользователя {{ u.name }}</label>
+                                <select id="user-role-{{ u.id }}" name="role" class="block w-40 px-2 py-1 border border-gray-300 rounded text-xs" onchange="this.form.submit()">
+                                    <option value="user" {% if u.role == 'user' %}selected{% endif %}>{{ t('users.role_user') }}</option>
+                                    <option value="moderator" {% if u.role == 'moderator' %}selected{% endif %}>{{ t('users.role_moderator') }}</option>
+                                    <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>{{ t('users.role_admin') }}</option>
+                                </select>
+                            </form>
+                            {% elseif u.role == 'admin' %}
                             <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ t('users.role_admin') }}</span>
+                            {% elseif u.role == 'moderator' %}
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">{{ t('users.role_moderator') }}</span>
                             {% else %}
                             <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{ t('users.role_user') }}</span>
                             {% endif %}
@@ -136,8 +158,9 @@
                                 <input type="checkbox" checked disabled class="rounded border-gray-300 text-purple-600">
                                 <span class="ml-2">Включен</span>
                             </label>
-                            {% else %}
+                            {% elseif can_manage_target %}
                             <form method="POST" action="/users/{{ u.id }}/site-access" class="inline-flex">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="site_access" value="0">
                                 <label class="inline-flex items-center cursor-pointer">
                                     <input type="checkbox" name="site_access" value="1"
@@ -149,13 +172,18 @@
                                     </span>
                                 </label>
                             </form>
+                            {% else %}
+                            <span class="{% if u.status == 'active' %}text-green-700{% else %}text-gray-500{% endif %}">
+                                {{ u.status == 'active' ? 'Включен' : 'Выключен' }}
+                            </span>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 text-sm min-w-72">
                             {% if u.role == 'admin' %}
                             <span class="text-gray-500">Полный доступ по роли</span>
-                            {% elseif all_servers|length > 0 %}
+                            {% elseif can_manage_target and all_servers|length > 0 %}
                             <form method="POST" action="/users/{{ u.id }}/server-access" class="space-y-3">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <div class="space-y-2">
                                     {% for server in all_servers %}
                                     {% set access = user_server_access[u.id][server.id]|default(null) %}
@@ -178,14 +206,17 @@
                                     <i class="fas fa-save mr-1"></i>{{ t('form.save') }}
                                 </button>
                             </form>
-                            {% else %}
+                            {% elseif can_manage_target %}
                             <span class="text-gray-500">Серверы еще не добавлены</span>
+                            {% else %}
+                            <span class="text-gray-500">Изменение доступно администратору</span>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{{ u.created_at|date('Y-m-d') }}</td>
                         <td class="px-6 py-4 text-sm min-w-52">
-                            {% if u.id != user.id %}
+                            {% if can_manage_target and u.id != user.id %}
                             <form method="POST" action="/users/{{ u.id }}/password" class="mb-3 space-y-2">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <label class="block text-xs font-medium text-gray-700">Задать пароль</label>
                                 <input type="password" name="new_password" required minlength="6" placeholder="Новый пароль"
                                        class="block w-48 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-purple-500 focus:border-purple-500">
@@ -196,14 +227,19 @@
                                 </button>
                             </form>
                             <form method="POST" action="/users/{{ u.id }}/delete" class="inline" onsubmit="return confirm('{{ t('users.delete_confirm', [u.name]) }}')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="text-red-600 hover:text-red-900">
                                     <i class="fas fa-trash"></i> {{ t('clients.delete') }}
                                 </button>
                             </form>
-                            {% else %}
+                            {% elseif u.id == user.id and user.role == 'admin' %}
                             <a href="/settings#profile" class="text-purple-600 hover:text-purple-900">
                                 <i class="fas fa-key mr-1"></i>{{ t('settings.change_password') }}
                             </a>
+                            {% elseif u.id == user.id %}
+                            <span class="text-gray-500">Текущая учетная запись</span>
+                            {% else %}
+                            <span class="text-gray-500">Только администратор</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -232,8 +268,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let regularUserSiteAccess = addUserSiteAccess.checked;
 
     function syncNewUserPassword() {
-        const isAdmin = addUserRole.value === 'admin';
-        if (isAdmin) {
+        const hasMandatorySiteAccess = addUserRole.value === 'admin' || addUserRole.value === 'moderator';
+        if (hasMandatorySiteAccess) {
             addUserSiteAccess.checked = true;
             addUserSiteAccess.disabled = true;
         } else {
@@ -241,7 +277,7 @@ document.addEventListener('DOMContentLoaded', function () {
             addUserSiteAccess.checked = regularUserSiteAccess;
         }
 
-        const passwordIsRequired = isAdmin || addUserSiteAccess.checked;
+        const passwordIsRequired = hasMandatorySiteAccess || addUserSiteAccess.checked;
         addUserPassword.disabled = !passwordIsRequired;
         addUserPassword.required = passwordIsRequired;
         addUserPassword.placeholder = passwordIsRequired

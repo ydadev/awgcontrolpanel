@@ -66,8 +66,15 @@ if (strpos($controller, 'public function users()') === false
     exit(1);
 }
 
-if (!preg_match("/Router::get\('\/users'.*?requireAdmin\(\).*?->users\(\)/s", $router)) {
-    fwrite(STDERR, "Admin-only users route is missing\n");
+if (!preg_match("/Router::get\('\/users'.*?requireUserManager\(\).*?->users\(\)/s", $router)) {
+    fwrite(STDERR, "User-manager route is missing\n");
+    exit(1);
+}
+
+if (substr_count($layout, "user.role in ['admin', 'moderator']") < 2
+    || strpos($users, '<option value="moderator">') === false
+    || strpos($users, 'action="/users/{{ u.id }}/role"') === false) {
+    fwrite(STDERR, "Moderator navigation or role controls are missing\n");
     exit(1);
 }
 

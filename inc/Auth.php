@@ -160,6 +160,27 @@ class Auth {
     return $u && ($u['role'] === 'admin');
   }
 
+  public static function isModerator(): bool {
+    $u = self::user();
+    return $u && ($u['role'] === UserRolePolicy::MODERATOR);
+  }
+
+  public static function canManageUsers(?array $user = null): bool {
+    $user = $user ?: self::user();
+    return $user && UserRolePolicy::canManageUsers((string) ($user['role'] ?? ''));
+  }
+
+  public static function canManageUser(array $target, ?array $actor = null): bool {
+    $actor = $actor ?: self::user();
+    if (!$actor) return false;
+
+    return UserRolePolicy::canManageUser(
+      (string) ($actor['role'] ?? ''),
+      (string) ($target['role'] ?? ''),
+      (int) ($actor['id'] ?? 0) === (int) ($target['id'] ?? 0)
+    );
+  }
+
   public static function can(string $permission, ?array $user = null): bool {
     $user = $user ?: self::user();
     if (!$user || !self::canAccessSite($user)) return false;
@@ -188,7 +209,7 @@ class Auth {
   }
 
   public static function setRole(int $userId, string $role): bool {
-    if (!in_array($role, ['admin','user'], true)) return false;
+    if (!UserRolePolicy::isKnownRole($role)) return false;
     $pdo = DB::conn();
     $stmt = $pdo->prepare('UPDATE users SET role = ? WHERE id = ?');
     return $stmt->execute([$role, $userId]);
