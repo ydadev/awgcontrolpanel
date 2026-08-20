@@ -2,8 +2,21 @@
 
 {% block title %}Пользователи - {{ app_name }}{% endblock %}
 
+{% block styles %}
+<style>
+.users-table {
+    min-width: 1500px;
+}
+.users-table th,
+.users-table td {
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="w-full mx-auto px-4 sm:px-6 lg:px-8">
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">Пользователи</h1>
     </div>
@@ -68,7 +81,7 @@
         </div>
     </div>
 
-    <div class="bg-white shadow rounded-lg overflow-hidden">
+    <div id="users-list-panel" class="bg-white shadow rounded-lg overflow-hidden">
         <div class="px-6 py-5 border-b border-gray-200 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <h2 class="text-lg font-medium text-gray-900">
                 <i class="fas fa-users mr-2 text-purple-600"></i>{{ t('users.all_users') }}
@@ -86,7 +99,7 @@
             </div>
         </div>
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
+            <table class="users-table w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.name') }}</th>

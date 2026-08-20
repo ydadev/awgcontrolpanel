@@ -29,6 +29,11 @@ if (strpos($settings, 'id="tab-users"') !== false
 $requiredUsersFragments = [
     'id="user-search"',
     'placeholder="Поиск по имени или почте"',
+    '.users-table {',
+    'min-width: 1500px;',
+    '<div class="w-full mx-auto px-4 sm:px-6 lg:px-8">',
+    '<table class="users-table w-full divide-y divide-gray-200">',
+    'id="users-list-panel"',
     'data-user-name',
     'data-user-email',
     "toLocaleLowerCase('ru-RU')",
@@ -41,6 +46,13 @@ foreach ($requiredUsersFragments as $fragment) {
         fwrite(STDERR, "Missing users page feature: {$fragment}\n");
         exit(1);
     }
+}
+
+if (strpos($layout, 'xl:space-x-4 2xl:space-x-6') === false
+    || strpos($layout, 'flex flex-shrink-0 items-center') === false
+    || strpos($layout, '{{ currentLang }}') === false) {
+    fwrite(STDERR, "Responsive header layout is missing\n");
+    exit(1);
 }
 
 if (strpos($controller, 'public function users()') === false
