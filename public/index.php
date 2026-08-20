@@ -37,6 +37,7 @@ require_once __DIR__ . '/../inc/View.php';
 require_once __DIR__ . '/../inc/VpnServer.php';
 require_once __DIR__ . '/../inc/VpnClient.php';
 require_once __DIR__ . '/../inc/UserServerAccess.php';
+require_once __DIR__ . '/../inc/UserPasswordPolicy.php';
 require_once __DIR__ . '/../inc/Translator.php';
 require_once __DIR__ . '/../inc/JWT.php';
 require_once __DIR__ . '/../inc/PanelImporter.php';
