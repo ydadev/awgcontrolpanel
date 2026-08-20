@@ -2923,7 +2923,7 @@ Router::post('/api/servers/{id}/protocols/install', function ($params) {
             $installOptions = array_merge($installOptions, $input[$optionsKey]);
         }
     }
-    foreach (['server_port', 'container_name', 'decision_token', 'decision_mode', 'skip_backup'] as $optionKey) {
+    foreach (['server_port', 'vpn_subnet', 'dns_servers', 'container_name', 'decision_token', 'decision_mode', 'skip_backup'] as $optionKey) {
         if (array_key_exists($optionKey, $input)) {
             $installOptions[$optionKey] = $input[$optionKey];
         }
