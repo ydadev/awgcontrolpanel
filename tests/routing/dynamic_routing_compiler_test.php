@@ -137,9 +137,15 @@ if ($exitCode !== 0) {
 }
 foreach ([
     'ipset create awg_policy_sources',
-    'ipset create \'awg_p12_dynamic4\'',
+    'ensure_dynamic_set \'awg_p12_dynamic4\' 21600',
+    'ipset destroy "$set_name"',
     'AWG_POLICY_DYNAMIC',
     '--set-xmark 0x440c/0xffffffff',
+    'AWG_POLICY_DNS_GUARD',
+    '-d 192.0.2.53 -p udp -m udp --dport 443 -j REJECT',
+    '-d 8.8.8.8 -p tcp -m tcp --dport 443 -j REJECT --reject-with tcp-reset',
+    '-p tcp -m tcp --dport 853 -j REJECT --reject-with tcp-reset',
+    '--dports 784,8853 -j REJECT',
 ] as $needle) {
     if (!str_contains($refresh, $needle)) {
         fwrite(STDERR, 'Generated refresh script omits ipset fallback: ' . $needle . PHP_EOL);
