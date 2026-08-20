@@ -11,9 +11,6 @@ class SettingsController {
     
     public function index() {
         $stats = $this->getTranslationStats();
-        $users = $this->getAllUsers();
-        $allServers = VpnServer::listAll();
-        $userServerAccess = UserServerAccess::mapForUsers();
         $apiKey = $this->getApiKey('openrouter');
         $branding = Branding::get(Config::get('APP_NAME', 'AWG Control Panel'));
         $twoFactorSettings = EmailTwoFactorSettings::forForm();
@@ -48,9 +45,6 @@ class SettingsController {
 
         $data = [
             'translation_stats' => $stats,
-            'users' => $users,
-            'all_servers' => $allServers,
-            'user_server_access' => $userServerAccess,
             'openrouter_key' => $apiKey,
             'branding' => $branding,
             'two_factor_settings' => $twoFactorSettings,
@@ -86,6 +80,25 @@ class SettingsController {
         }
         
         View::render('settings.twig', $data);
+    }
+
+    public function users() {
+        $data = [
+            'users' => $this->getAllUsers(),
+            'all_servers' => VpnServer::listAll(),
+            'user_server_access' => UserServerAccess::mapForUsers(),
+        ];
+
+        if (isset($_SESSION['settings_success'])) {
+            $data['success'] = $_SESSION['settings_success'];
+            unset($_SESSION['settings_success']);
+        }
+        if (isset($_SESSION['settings_error'])) {
+            $data['error'] = $_SESSION['settings_error'];
+            unset($_SESSION['settings_error']);
+        }
+
+        View::render('users.twig', $data);
     }
     
     public function changePassword() {
@@ -159,7 +172,7 @@ class SettingsController {
     
     public function addUser() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header('Location: /settings');
+            header('Location: /users');
             exit;
         }
         
@@ -178,19 +191,19 @@ class SettingsController {
         
         if (empty($name) || empty($email) || empty($password)) {
             $_SESSION['settings_error'] = 'All fields are required';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
         
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $_SESSION['settings_error'] = 'Invalid email address';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
         
         if (strlen($password) < 6) {
             $_SESSION['settings_error'] = 'Password must be at least 6 characters';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
         
@@ -199,7 +212,7 @@ class SettingsController {
         $stmt->execute([$email]);
         if ($stmt->fetch()) {
             $_SESSION['settings_error'] = 'Email already exists';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
         
@@ -209,13 +222,13 @@ class SettingsController {
         $stmt->execute([$name, $email, $passwordHash, $role, $status]);
         
         $_SESSION['settings_success'] = 'User added successfully';
-        header('Location: /settings#users');
+        header('Location: /users');
         exit;
     }
 
     public function changeUserPassword($userId) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -229,7 +242,7 @@ class SettingsController {
         $userId = (int)$userId;
         if ($userId <= 0 || $userId === (int)$user['id']) {
             $_SESSION['settings_error'] = 'Use the profile tab to change your own password';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -238,19 +251,19 @@ class SettingsController {
 
         if ($newPassword === '' || $confirmPassword === '') {
             $_SESSION['settings_error'] = 'Password fields are required';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
         if ($newPassword !== $confirmPassword) {
             $_SESSION['settings_error'] = 'New passwords do not match';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
         if (strlen($newPassword) < 6) {
             $_SESSION['settings_error'] = 'Password must be at least 6 characters';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -259,7 +272,7 @@ class SettingsController {
         $target = $stmt->fetch();
         if (!$target) {
             $_SESSION['settings_error'] = 'User not found';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -268,7 +281,7 @@ class SettingsController {
         $stmt->execute([$hash, $userId]);
 
         $_SESSION['settings_success'] = 'Password updated for ' . $target['email'];
-        header('Location: /settings#users');
+        header('Location: /users');
         exit;
     }
 
@@ -357,7 +370,7 @@ class SettingsController {
         $userId = (int)$userId;
         if ($userId <= 0) {
             $_SESSION['settings_error'] = 'Invalid user';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -366,13 +379,13 @@ class SettingsController {
         $target = $stmt->fetch();
         if (!$target) {
             $_SESSION['settings_error'] = 'User not found';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
         if ($target['role'] === 'admin') {
             $_SESSION['settings_error'] = 'Server access is managed only for regular users';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -392,13 +405,13 @@ class SettingsController {
             $_SESSION['settings_error'] = 'Failed to update server access: ' . $e->getMessage();
         }
 
-        header('Location: /settings#users');
+        header('Location: /users');
         exit;
     }
 
     public function saveUserSiteAccess($userId) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -416,12 +429,12 @@ class SettingsController {
 
         if (!$target) {
             $_SESSION['settings_error'] = 'User not found';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
         if ($target['role'] === 'admin') {
             $_SESSION['settings_error'] = 'Administrators always have site access';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
 
@@ -430,7 +443,7 @@ class SettingsController {
         $stmt->execute([$status, $userId]);
 
         $_SESSION['settings_success'] = 'Site access updated for ' . $target['email'];
-        header('Location: /settings#users');
+        header('Location: /users');
         exit;
     }
     
@@ -444,7 +457,7 @@ class SettingsController {
         
         if ($userId == $user['id']) {
             $_SESSION['settings_error'] = 'Cannot delete yourself';
-            header('Location: /settings#users');
+            header('Location: /users');
             exit;
         }
         
@@ -452,7 +465,7 @@ class SettingsController {
         $stmt->execute([$userId]);
         
         $_SESSION['settings_success'] = 'User deleted successfully';
-        header('Location: /settings#users');
+        header('Location: /users');
         exit;
     }
     
