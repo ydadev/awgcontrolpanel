@@ -89,12 +89,15 @@
                     <!-- Desktop Menu -->
                     <div class="hidden md:ml-6 md:flex md:space-x-8">
                         <a href="/dashboard" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
-                            <i class="fas fa-tachometer-alt mr-2"></i>{{ t('menu.dashboard') }}
+                            <i class="fas fa-tachometer-alt mr-2"></i>Панель
                         </a>
                         <a href="/servers" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
                             <i class="fas fa-server mr-2"></i>{{ t('menu.servers') }}
                         </a>
                         {% if user.role == 'admin' %}
+                        <a href="/users" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
+                            <i class="fas fa-users mr-2"></i>Пользователи
+                        </a>
                         <a href="/routing" class="text-white hover:text-gray-200 inline-flex items-center px-1 pt-1 text-sm font-medium">
                             <i class="fas fa-route mr-2"></i>Маршруты
                         </a>
@@ -160,12 +163,15 @@
         <div id="mobileMenu" class="mobile-menu md:hidden">
             <div class="px-2 pt-2 pb-3 space-y-1">
                 <a href="/dashboard" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
-                    <i class="fas fa-tachometer-alt mr-2"></i>{{ t('menu.dashboard') }}
+                    <i class="fas fa-tachometer-alt mr-2"></i>Панель
                 </a>
                 <a href="/servers" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
                     <i class="fas fa-server mr-2"></i>{{ t('menu.servers') }}
                 </a>
                 {% if user.role == 'admin' %}
+                <a href="/users" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
+                    <i class="fas fa-users mr-2"></i>Пользователи
+                </a>
                 <a href="/routing" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
                     <i class="fas fa-route mr-2"></i>Маршруты
                 </a>

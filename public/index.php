@@ -4061,6 +4061,14 @@ Router::get('/settings', function () {
     $controller->index();
 });
 
+Router::get('/users', function () {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->users();
+});
+
 Router::get('/settings/protocols', function () {
     requireAdmin();
     $params = [];
@@ -4234,7 +4242,7 @@ Router::post('/settings/change-password', function () {
 });
 
 // Admin password reset for another user
-Router::post('/settings/users/{id}/password', function ($params) {
+Router::post('/users/{id}/password', function ($params) {
     requireAdmin();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
@@ -4252,7 +4260,7 @@ Router::post('/settings/profile', function () {
 });
 
 // Add user
-Router::post('/settings/add-user', function () {
+Router::post('/users/add', function () {
     requireAdmin();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
@@ -4261,7 +4269,7 @@ Router::post('/settings/add-user', function () {
 });
 
 // Delete user
-Router::post('/settings/delete-user/{id}', function ($params) {
+Router::post('/users/{id}/delete', function ($params) {
     requireAdmin();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
@@ -4270,7 +4278,7 @@ Router::post('/settings/delete-user/{id}', function ($params) {
 });
 
 // Update regular user's server access
-Router::post('/settings/users/{id}/server-access', function ($params) {
+Router::post('/users/{id}/server-access', function ($params) {
     requireAdmin();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
@@ -4279,7 +4287,7 @@ Router::post('/settings/users/{id}/server-access', function ($params) {
 });
 
 // Enable or disable panel access for a regular user
-Router::post('/settings/users/{id}/site-access', function ($params) {
+Router::post('/users/{id}/site-access', function ($params) {
     requireAdmin();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
