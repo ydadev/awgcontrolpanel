@@ -9,11 +9,15 @@ if ($standardCommand !== 'wg show all dump 2>/dev/null') {
 }
 
 $awg2Command = WireGuardStats::buildDumpCommand('awg2', 'amnezia-awg2');
-foreach (['docker exec -i', 'amnezia-awg2', 'command -v awg', 'show all dump'] as $fragment) {
+foreach (['docker exec', 'amnezia-awg2', 'command -v awg', 'show all dump'] as $fragment) {
     if (!str_contains($awg2Command, $fragment)) {
         fwrite(STDERR, "AWG2 stats command is missing {$fragment}\n");
         exit(1);
     }
+}
+if (str_contains($awg2Command, 'docker exec -i')) {
+    fwrite(STDERR, "AWG2 stats command must not keep Docker stdin open\n");
+    exit(1);
 }
 
 $publicKey = 'client-public-key=';

@@ -17,10 +17,10 @@ final class WireGuardStats
         if ($protocolSlug === 'awg2') {
             $inner = 'tool=$(command -v awg || command -v wg || true); '
                 . '[ -n "$tool" ] && "$tool" show all dump 2>/dev/null';
-            return 'docker exec -i ' . $containerArg . ' sh -c ' . escapeshellarg($inner);
+            return 'docker exec ' . $containerArg . ' sh -c ' . escapeshellarg($inner);
         }
 
-        return 'docker exec -i ' . $containerArg . ' wg show all dump 2>/dev/null';
+        return 'docker exec ' . $containerArg . ' wg show all dump 2>/dev/null';
     }
 
     public static function parsePeerDump(string $output, string $publicKey): ?array

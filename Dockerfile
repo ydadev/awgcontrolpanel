@@ -49,7 +49,6 @@ RUN echo "0 * * * * www-data cd /var/www/html && /usr/local/bin/php bin/check_ex
     && echo "*/30 * * * * www-data cd /var/www/html && /usr/local/bin/php bin/sync_ldap_users.php >> /var/log/ldap_sync.log 2>&1" >> /etc/cron.d/amnezia-cron \
     && echo "*/3 * * * * root /bin/bash /var/www/html/bin/monitor_metrics.sh >> /var/log/metrics_monitor.log 2>&1" >> /etc/cron.d/amnezia-cron \
     && chmod 0644 /etc/cron.d/amnezia-cron \
-    && crontab /etc/cron.d/amnezia-cron \
     && touch /var/log/cron.log \
     && touch /var/log/metrics_monitor.log \
     && touch /var/log/metrics_collector.log \
