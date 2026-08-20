@@ -20,6 +20,8 @@ class ServerMonitoring
     private bool $xrayStatsFetched = false;
     private array $aivpnStatsCache = ['by_name' => [], 'by_id' => [], 'by_ip' => []];
     private bool $aivpnStatsFetched = false;
+    private array $wireGuardDumpCache = [];
+    private const SSH_COMMAND_TIMEOUT_SECONDS = 20;
 
     /**
      * Fetch all X-ray user stats in one batch
@@ -413,8 +415,12 @@ class ServerMonitoring
                 $bytesSent = (int) ($currentDbStats['bytes_sent'] ?? 0);
                 $bytesReceived = (int) ($currentDbStats['bytes_received'] ?? 0);
             } else {
-                $cmd = WireGuardStats::buildDumpCommand($protocolSlug, $containerName);
-                $result = $cmd !== '' ? $this->execSSH($cmd) : null;
+                $cacheKey = $protocolSlug . "\0" . $containerName;
+                if (!array_key_exists($cacheKey, $this->wireGuardDumpCache)) {
+                    $cmd = WireGuardStats::buildDumpCommand($protocolSlug, $containerName);
+                    $this->wireGuardDumpCache[$cacheKey] = $cmd !== '' ? $this->execSSH($cmd) : null;
+                }
+                $result = $this->wireGuardDumpCache[$cacheKey];
                 $peerStats = $result
                     ? WireGuardStats::parsePeerDump($result, (string) $publicKey)
                     : null;
@@ -635,7 +641,8 @@ class ServerMonitoring
         $sshKey = $this->serverData['ssh_key'] ?? '';
         $password = $this->serverData['password'] ?? '';
 
-        $sshOptions = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR';
+        $sshOptions = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10'
+            . ' -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o LogLevel=ERROR';
         $keyFile = '';
 
         if (!empty($sshKey)) {
@@ -672,6 +679,11 @@ class ServerMonitoring
             );
         }
 
+        $sshCmd = sprintf(
+            'timeout --signal=TERM --kill-after=5s %ds %s',
+            self::SSH_COMMAND_TIMEOUT_SECONDS,
+            $sshCmd
+        );
         $output = shell_exec($sshCmd);
 
         // Clean up temp key file

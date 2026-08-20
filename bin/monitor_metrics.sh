@@ -7,6 +7,8 @@
 SCRIPT_PATH="/var/www/html/bin/collect_metrics.php"
 LOG_FILE="/var/log/metrics_monitor.log"
 PID_FILE="/var/run/collect_metrics.pid"
+HEARTBEAT_FILE="/var/run/collect_metrics.heartbeat"
+HEARTBEAT_MAX_AGE="${METRICS_HEARTBEAT_MAX_AGE:-120}"
 # IMPORTANT: the monitor MUST use a DIFFERENT lock file than the collector.
 # collect_metrics.php flock()s /var/run/collect_metrics.lock itself. If the monitor
 # held that same lock, the collector it starts would inherit the monitor's locked fd
@@ -55,9 +57,44 @@ start_collector() {
     log_message "Metrics collector started with PID: $(cat $PID_FILE)"
 }
 
+heartbeat_is_fresh() {
+    [ -f "$HEARTBEAT_FILE" ] || return 1
+
+    NOW=$(date +%s)
+    UPDATED=$(stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null || echo 0)
+    AGE=$((NOW - UPDATED))
+    [ "$AGE" -lt 0 ] && AGE=0
+    [ "$AGE" -le "$HEARTBEAT_MAX_AGE" ]
+}
+
+stop_collector() {
+    PID=""
+    [ -f "$PID_FILE" ] && PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$PID" ] && ps -p "$PID" > /dev/null 2>&1; then
+        # The collector is started with setsid, so its PID is also the process-group ID.
+        # Stop the whole group to avoid leaving a stuck ssh/sshpass child behind.
+        /bin/kill -TERM -- "-$PID" 2>/dev/null || kill "$PID" 2>/dev/null || true
+        i=0
+        while [ "$i" -lt 5 ] && ps -p "$PID" > /dev/null 2>&1; do
+            sleep 1
+            i=$((i + 1))
+        done
+        if ps -p "$PID" > /dev/null 2>&1; then
+            /bin/kill -KILL -- "-$PID" 2>/dev/null || kill -9 "$PID" 2>/dev/null || true
+        fi
+    fi
+    rm -f "$PID_FILE" "$HEARTBEAT_FILE"
+}
+
 # Main logic
 if is_running; then
-    log_message "Metrics collector is running (PID: $(cat $PID_FILE))"
+    if heartbeat_is_fresh; then
+        log_message "Metrics collector is healthy (PID: $(cat $PID_FILE))"
+    else
+        log_message "Metrics collector heartbeat is stale - restarting it"
+        stop_collector
+        start_collector
+    fi
 else
     log_message "Metrics collector is not running - starting it"
     start_collector

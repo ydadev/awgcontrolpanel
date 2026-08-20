@@ -35,12 +35,17 @@ if (!$lockFp || !flock($lockFp, LOCK_EX | LOCK_NB)) {
 
 // Write PID file for monitoring
 $pidFile = '/var/run/collect_metrics.pid';
+$heartbeatFile = '/var/run/collect_metrics.heartbeat';
 file_put_contents($pidFile, getmypid());
+touch($heartbeatFile);
 
 // Register shutdown function to clean up PID and lock files
-register_shutdown_function(function() use ($pidFile, $lockFp, $lockFile) {
+register_shutdown_function(function() use ($pidFile, $heartbeatFile, $lockFp, $lockFile) {
     if (file_exists($pidFile)) {
         unlink($pidFile);
+    }
+    if (file_exists($heartbeatFile)) {
+        unlink($heartbeatFile);
     }
     if ($lockFp) {
         flock($lockFp, LOCK_UN);
@@ -62,7 +67,8 @@ while (true) {
             if ($server['status'] !== 'active') {
                 continue;
             }
-            
+
+            touch($heartbeatFile);
             try {
                 echo "[" . date('Y-m-d H:i:s') . "] Collecting metrics for server #{$server['id']} ({$server['name']})\n";
                 
@@ -98,11 +104,14 @@ while (true) {
                 
             } catch (Exception $e) {
                 echo "  ERROR: " . $e->getMessage() . "\n";
+            } finally {
+                touch($heartbeatFile);
             }
         }
         
         // Clean old metrics
         ServerMonitoring::cleanOldMetrics();
+        touch($heartbeatFile);
         
         // Calculate sleep time
         $executionTime = microtime(true) - $startTime;
@@ -115,11 +124,13 @@ while (true) {
         }
         
     } catch (Exception $e) {
+        touch($heartbeatFile);
         echo "[" . date('Y-m-d H:i:s') . "] FATAL ERROR: " . $e->getMessage() . "\n";
         error_log("[FATAL] Metrics collector error: " . $e->getMessage());
         echo "Retrying in 30 seconds...\n\n";
         sleep(30);
     } catch (Error $e) {
+        touch($heartbeatFile);
         echo "[" . date('Y-m-d H:i:s') . "] CRITICAL ERROR: " . $e->getMessage() . "\n";
         error_log("[CRITICAL] Metrics collector error: " . $e->getMessage());
         echo "Retrying in 30 seconds...\n\n";
