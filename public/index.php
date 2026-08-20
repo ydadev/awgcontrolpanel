@@ -30,6 +30,7 @@ require_once __DIR__ . '/../inc/Branding.php';
 require_once __DIR__ . '/../inc/Csrf.php';
 require_once __DIR__ . '/../inc/EmailTwoFactorSettings.php';
 require_once __DIR__ . '/../inc/EmailTwoFactorMailer.php';
+require_once __DIR__ . '/../inc/ConnectionEmailService.php';
 require_once __DIR__ . '/../inc/EmailTwoFactorAuth.php';
 require_once __DIR__ . '/../inc/Router.php';
 require_once __DIR__ . '/../inc/View.php';
@@ -1390,6 +1391,24 @@ Router::post('/servers/{id}/clients/create', function ($params) {
             $client->setTrafficLimit($trafficLimitBytes);
         }
 
+        if (!empty($_POST['send_email'])) {
+            try {
+                ConnectionEmailService::send($clientId, $connectionOwner);
+                $_SESSION['connection_email_message'] = [
+                    'client_id' => $clientId,
+                    'type' => 'success',
+                    'text' => 'Письмо с конфигурацией отправлено на ' . (string) $connectionOwner['email'],
+                ];
+            } catch (Throwable $e) {
+                error_log('Connection email delivery failed for client ' . $clientId . ': ' . $e->getMessage());
+                $_SESSION['connection_email_message'] = [
+                    'client_id' => $clientId,
+                    'type' => 'error',
+                    'text' => 'Подключение создано, но письмо отправить не удалось. Проверьте адрес пользователя и настройки SMTP.',
+                ];
+            }
+        }
+
         redirect('/clients/' . $clientId);
     } catch (Exception $e) {
         redirect('/servers/' . $serverId . '?error=' . urlencode($e->getMessage()));
@@ -1410,6 +1429,12 @@ Router::get('/clients/{id}', function ($params) {
             http_response_code(403);
             echo 'Forbidden';
             return;
+        }
+        $connectionEmailMessage = $_SESSION['connection_email_message'] ?? null;
+        if (!is_array($connectionEmailMessage) || (int) ($connectionEmailMessage['client_id'] ?? 0) !== $clientId) {
+            $connectionEmailMessage = null;
+        } else {
+            unset($_SESSION['connection_email_message']);
         }
         try {
             $ownerStmt = DB::conn()->prepare('SELECT email, name, role FROM users WHERE id = ? LIMIT 1');
@@ -1506,7 +1531,8 @@ Router::get('/clients/{id}', function ($params) {
             'raw_wireguard_qr_code' => $rawWireguardQrCode,
             'raw_wireguard_title' => $rawWireguardTitle,
             'raw_wireguard_hint' => $rawWireguardHint,
-            'is_awg2' => $isAwg2
+            'is_awg2' => $isAwg2,
+            'connection_email_message' => $connectionEmailMessage
         ]);
     } catch (Exception $e) {
         http_response_code(404);

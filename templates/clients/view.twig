@@ -3,6 +3,13 @@
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 py-8">
   <h1 class="text-3xl font-bold mb-6">{{ client.name }}</h1>
+
+  {% if connection_email_message %}
+  <div class="mb-6 border px-4 py-3 rounded {% if connection_email_message.type == 'success' %}bg-green-50 border-green-400 text-green-700{% else %}bg-red-50 border-red-400 text-red-700{% endif %}" role="status">
+    <i class="fas {% if connection_email_message.type == 'success' %}fa-check-circle{% else %}fa-exclamation-circle{% endif %} mr-2"></i>
+    {{ connection_email_message.text }}
+  </div>
+  {% endif %}
   
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
     <div class="bg-white rounded shadow p-6">
