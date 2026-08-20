@@ -83,6 +83,12 @@ class SettingsController {
     }
 
     public function users() {
+        if (!Auth::canManageUsers()) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
         $data = [
             'users' => $this->getAllUsers(),
             'all_servers' => VpnServer::listAll(),
@@ -177,16 +183,28 @@ class SettingsController {
         }
         
         $user = Auth::user();
-        if ($user['role'] !== 'admin') {
+        if (!Auth::canManageUsers($user)) {
             http_response_code(403);
             echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
             return;
         }
         
         $name = trim($_POST['name'] ?? '');
         $email = trim($_POST['email'] ?? '');
-        $role = ($_POST['role'] ?? 'user') === 'admin' ? 'admin' : 'user';
-        $siteAccess = $role === 'admin' || !empty($_POST['site_access']);
+        $role = trim((string) ($_POST['role'] ?? UserRolePolicy::USER));
+        if (!UserRolePolicy::canAssignRole((string) $user['role'], $role)) {
+            if (($user['role'] ?? '') === UserRolePolicy::MODERATOR && $role === UserRolePolicy::USER) {
+                // Moderators can create regular users only.
+            } else {
+                http_response_code(403);
+                echo 'Forbidden';
+                return;
+            }
+        }
+        $siteAccess = UserRolePolicy::hasAdministrativeSiteAccess($role) || !empty($_POST['site_access']);
         $status = $siteAccess ? 'active' : 'disabled';
         
         if (empty($name) || empty($email)) {
@@ -239,9 +257,12 @@ class SettingsController {
         }
 
         $user = Auth::user();
-        if ($user['role'] !== 'admin') {
+        if (!Auth::canManageUsers($user)) {
             http_response_code(403);
             echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
             return;
         }
 
@@ -273,13 +294,18 @@ class SettingsController {
             exit;
         }
 
-        $stmt = $this->pdo->prepare("SELECT id, email FROM users WHERE id = ? LIMIT 1");
+        $stmt = $this->pdo->prepare("SELECT id, email, role FROM users WHERE id = ? LIMIT 1");
         $stmt->execute([$userId]);
         $target = $stmt->fetch();
         if (!$target) {
             $_SESSION['settings_error'] = 'User not found';
             header('Location: /users');
             exit;
+        }
+        if (!Auth::canManageUser($target, $user)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
         }
 
         $hash = password_hash($newPassword, PASSWORD_BCRYPT);
@@ -367,9 +393,12 @@ class SettingsController {
 
     public function saveUserServerAccess($userId) {
         $user = Auth::user();
-        if ($user['role'] !== 'admin') {
+        if (!Auth::canManageUsers($user)) {
             http_response_code(403);
             echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
             return;
         }
 
@@ -389,10 +418,10 @@ class SettingsController {
             exit;
         }
 
-        if ($target['role'] === 'admin') {
-            $_SESSION['settings_error'] = 'Server access is managed only for regular users';
-            header('Location: /users');
-            exit;
+        if (!Auth::canManageUser($target, $user)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
         }
 
         $serverIds = $_POST['server_ids'] ?? [];
@@ -422,9 +451,12 @@ class SettingsController {
         }
 
         $user = Auth::user();
-        if (($user['role'] ?? '') !== 'admin') {
+        if (!Auth::canManageUsers($user)) {
             http_response_code(403);
             echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
             return;
         }
 
@@ -443,9 +475,14 @@ class SettingsController {
             header('Location: /users');
             exit;
         }
+        if (!Auth::canManageUser($target, $user)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
 
         $status = !empty($_POST['site_access']) ? 'active' : 'disabled';
-        $stmt = $this->pdo->prepare("UPDATE users SET status = ? WHERE id = ? AND role = 'user'");
+        $stmt = $this->pdo->prepare("UPDATE users SET status = ? WHERE id = ? AND role <> 'admin'");
         $stmt->execute([$status, $userId]);
 
         $_SESSION['settings_success'] = 'Site access updated for ' . $target['email'];
@@ -455,9 +492,12 @@ class SettingsController {
     
     public function deleteUser($userId) {
         $user = Auth::user();
-        if ($user['role'] !== 'admin') {
+        if (!Auth::canManageUsers($user)) {
             http_response_code(403);
             echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
             return;
         }
         
@@ -466,6 +506,20 @@ class SettingsController {
             header('Location: /users');
             exit;
         }
+
+        $stmt = $this->pdo->prepare("SELECT id, role FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([(int) $userId]);
+        $target = $stmt->fetch();
+        if (!$target) {
+            $_SESSION['settings_error'] = 'User not found';
+            header('Location: /users');
+            exit;
+        }
+        if (!Auth::canManageUser($target, $user)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
         
         $stmt = $this->pdo->prepare("DELETE FROM users WHERE id = ?");
         $stmt->execute([$userId]);
@@ -473,6 +527,68 @@ class SettingsController {
         $_SESSION['settings_success'] = 'User deleted successfully';
         header('Location: /users');
         exit;
+    }
+
+    public function saveUserRole($userId) {
+        $user = Auth::user();
+        if (($user['role'] ?? '') !== UserRolePolicy::ADMIN) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
+            return;
+        }
+
+        $userId = (int) $userId;
+        if ($userId <= 0 || $userId === (int) $user['id']) {
+            $_SESSION['settings_error'] = 'You cannot change your own role';
+            header('Location: /users');
+            exit;
+        }
+
+        $role = trim((string) ($_POST['role'] ?? ''));
+        if (!UserRolePolicy::canAssignRole((string) $user['role'], $role)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
+        $stmt = $this->pdo->prepare("SELECT id, role FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+        $target = $stmt->fetch();
+        if (!$target) {
+            $_SESSION['settings_error'] = 'User not found';
+            header('Location: /users');
+            exit;
+        }
+
+        if (($target['role'] ?? '') === UserRolePolicy::ADMIN && $role !== UserRolePolicy::ADMIN) {
+            $adminCount = (int) $this->pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
+            if ($adminCount <= 1) {
+                $_SESSION['settings_error'] = 'The last administrator cannot be demoted';
+                header('Location: /users');
+                exit;
+            }
+        }
+
+        $statusSql = UserRolePolicy::hasAdministrativeSiteAccess($role) ? ", status = 'active'" : '';
+        $stmt = $this->pdo->prepare("UPDATE users SET role = ?{$statusSql} WHERE id = ?");
+        $stmt->execute([$role, $userId]);
+
+        $_SESSION['settings_success'] = 'User role updated';
+        header('Location: /users');
+        exit;
+    }
+
+    private function validateUserManagementCsrf(): bool {
+        if (Csrf::validate($_POST['csrf_token'] ?? null)) {
+            return true;
+        }
+
+        $_SESSION['settings_error'] = 'The form session expired. Reload the page and try again.';
+        header('Location: /users');
+        return false;
     }
     
     private function getAllUsers() {

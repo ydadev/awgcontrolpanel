@@ -25,6 +25,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../inc/Config.php';
 require_once __DIR__ . '/../inc/DB.php';
 require_once __DIR__ . '/../inc/LoginRateLimiter.php';
+require_once __DIR__ . '/../inc/UserRolePolicy.php';
 require_once __DIR__ . '/../inc/Auth.php';
 require_once __DIR__ . '/../inc/Branding.php';
 require_once __DIR__ . '/../inc/Csrf.php';
@@ -146,6 +147,26 @@ function requireAdmin(): void
     if (!Auth::isAdmin()) {
         http_response_code(403);
         echo 'Forbidden: Admin access required';
+        exit;
+    }
+}
+
+function requireUserManager(): void
+{
+    requireAuth();
+    if (!Auth::canManageUsers()) {
+        http_response_code(403);
+        echo 'Forbidden: User management access required';
+        exit;
+    }
+}
+
+function requireSettingsPageAccess(): void
+{
+    requireAuth();
+    if (Auth::isModerator()) {
+        http_response_code(403);
+        echo 'Forbidden: Settings access is not available for moderators';
         exit;
     }
 }
@@ -4055,7 +4076,7 @@ Router::get('/api/clients/overlimit', function () {
 
 // Settings page
 Router::get('/settings', function () {
-    requireAuth();
+    requireSettingsPageAccess();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
@@ -4063,7 +4084,7 @@ Router::get('/settings', function () {
 });
 
 Router::get('/users', function () {
-    requireAdmin();
+    requireUserManager();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
@@ -4244,7 +4265,7 @@ Router::post('/settings/change-password', function () {
 
 // Admin password reset for another user
 Router::post('/users/{id}/password', function ($params) {
-    requireAdmin();
+    requireUserManager();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
@@ -4262,7 +4283,7 @@ Router::post('/settings/profile', function () {
 
 // Add user
 Router::post('/users/add', function () {
-    requireAdmin();
+    requireUserManager();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
@@ -4271,7 +4292,7 @@ Router::post('/users/add', function () {
 
 // Delete user
 Router::post('/users/{id}/delete', function ($params) {
-    requireAdmin();
+    requireUserManager();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
@@ -4280,7 +4301,7 @@ Router::post('/users/{id}/delete', function ($params) {
 
 // Update regular user's server access
 Router::post('/users/{id}/server-access', function ($params) {
-    requireAdmin();
+    requireUserManager();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
@@ -4289,11 +4310,20 @@ Router::post('/users/{id}/server-access', function ($params) {
 
 // Enable or disable panel access for a regular user
 Router::post('/users/{id}/site-access', function ($params) {
-    requireAdmin();
+    requireUserManager();
 
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
     $controller->saveUserSiteAccess($params['id']);
+});
+
+// Only administrators can assign account roles.
+Router::post('/users/{id}/role', function ($params) {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->saveUserRole($params['id']);
 });
 
 // Save UI branding
