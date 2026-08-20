@@ -1023,7 +1023,7 @@ class InstallProtocolManager
         $stmt->execute($params);
 
         try {
-            $stmt2 = $pdo->prepare('SELECT install_protocol, host, vpn_port FROM vpn_servers WHERE id = ?');
+            $stmt2 = $pdo->prepare('SELECT install_protocol, host, vpn_port, vpn_subnet, dns_servers FROM vpn_servers WHERE id = ?');
             $stmt2->execute([$serverId]);
             $row = $stmt2->fetch();
             $slug = $row['install_protocol'] ?? null;
@@ -1035,6 +1035,8 @@ class InstallProtocolManager
                     $config = [
                         'server_host' => $row['host'] ?? null,
                         'server_port' => $row['vpn_port'] ?? null,
+                        'vpn_subnet' => $row['vpn_subnet'] ?? null,
+                        'dns_servers' => $row['dns_servers'] ?? null,
                         'extras' => $extras
                     ];
                     $stmt4 = $pdo->prepare('INSERT INTO server_protocols (server_id, protocol_id, config_data, applied_at, created_at) VALUES (?, ?, ?, NOW(), NOW()) ON DUPLICATE KEY UPDATE config_data = VALUES(config_data), applied_at = NOW()');
@@ -1104,6 +1106,8 @@ class InstallProtocolManager
                 : (isset($serverData['vpn_port']) && (int) $serverData['vpn_port'] > 0
                     ? (int) $serverData['vpn_port']
                     : ''),
+            'SERVER_VPN_SUBNET' => $options['vpn_subnet']
+                ?? ($metadata['vpn_subnet'] ?? ($serverData['vpn_subnet'] ?? '')),
         ];
 
         // Check for saved Reality keys in server_protocols table
@@ -1628,7 +1632,7 @@ class InstallProtocolManager
             if (isset($res['client_id']) && is_string($res['client_id'])) {
                 $clientId = $res['client_id'];
             }
-            if (is_string($res['output'] ?? '')) {
+            if (isset($res['output']) && is_string($res['output'])) {
                 $out = $res['output'];
                 if (preg_match('/Port:\s*(\d+)/i', $out, $m)) {
                     $port = (int) $m[1];
@@ -1706,11 +1710,22 @@ class InstallProtocolManager
             $pdo = DB::conn();
             $pid = self::resolveProtocolId($protocol);
             if ($pid) {
+                $vpnSubnet = $res['vpn_subnet']
+                    ?? ($options['vpn_subnet'] ?? ($protocol['definition']['metadata']['vpn_subnet'] ?? null));
+                $serverData = $server->getData();
+                $dnsServers = trim((string) (
+                    $options['dns_servers']
+                    ?? ($serverData['dns_servers'] ?? ($res['dns_servers'] ?? ''))
+                ));
                 $config = [
-                    'server_host' => $server->getData()['host'] ?? null,
+                    'server_host' => $serverData['host'] ?? null,
                     'server_port' => $port,
+                    'vpn_subnet' => $vpnSubnet,
+                    'dns_servers' => $dnsServers !== '' ? $dnsServers : null,
                     'extras' => [
                         'vpn_port' => $port,
+                        'vpn_subnet' => $vpnSubnet,
+                        'dns_servers' => $dnsServers !== '' ? $dnsServers : null,
                         'server_public_key' => $res['server_public_key'] ?? null,
                         'preshared_key' => $res['preshared_key'] ?? null,
                         'password' => $password,

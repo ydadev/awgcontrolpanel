@@ -1660,7 +1660,15 @@ class VpnClient
         $peerBlock .= "AllowedIPs = {$clientIP}/32\n";
 
         $escapedBlock = addslashes($peerBlock);
-        $cmd4 = sprintf("docker exec -i %s sh -c 'echo \"%s\" >> %s/%s'", $containerName, $escapedBlock, $configDir, $configFile);
+        $cmd4 = sprintf(
+            "docker exec -i %s sh -c 'echo \"%s\" >> %s/%s && chmod 600 %s/%s'",
+            $containerName,
+            $escapedBlock,
+            $configDir,
+            $configFile,
+            $configDir,
+            $configFile
+        );
         self::executeServerCommand($serverData, $cmd4, true);
 
         // 5. Update clientsTable
@@ -2160,9 +2168,11 @@ class VpnClient
         // Write back to file
         $escapedConfig = str_replace("'", "'\\''", $newConfig);
         $writeCmd = sprintf(
-            "docker exec -i %s sh -c 'echo '\''%s'\'' > %s/%s'",
+            "docker exec -i %s sh -c 'echo '\''%s'\'' > %s/%s && chmod 600 %s/%s'",
             $containerName,
             $escapedConfig,
+            $configDir,
+            $configFile,
             $configDir,
             $configFile
         );
@@ -2177,6 +2187,16 @@ class VpnClient
         );
         $saveCmd = sprintf("docker exec -i %s sh -lc %s", escapeshellarg($containerName), escapeshellarg($saveScript));
         self::executeServerCommand($serverData, $saveCmd, true);
+        self::executeServerCommand(
+            $serverData,
+            sprintf(
+                'docker exec -i %s chmod 600 %s/%s',
+                escapeshellarg($containerName),
+                escapeshellarg($configDir),
+                escapeshellarg($configFile)
+            ),
+            true
+        );
 
         // Remove from clientsTable
         self::removeFromClientsTable($serverData, $publicKey);
