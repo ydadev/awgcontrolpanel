@@ -58,18 +58,20 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('auth.password') }}</label>
-                        <input type="password" name="password" required minlength="6" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
+                        <input id="add-user-password" type="password" name="password" minlength="6" disabled
+                               placeholder="Будет создан автоматически"
+                               class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('users.role') }}</label>
-                        <select name="role" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
+                        <select id="add-user-role" name="role" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                             <option value="user">{{ t('users.role_user') }}</option>
                             <option value="admin">{{ t('users.role_admin') }}</option>
                         </select>
                     </div>
                     <div class="flex items-center">
                         <label class="inline-flex items-center">
-                            <input type="checkbox" name="site_access" value="1" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                            <input id="add-user-site-access" type="checkbox" name="site_access" value="1" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed">
                             <span class="ml-2 text-sm text-gray-700">Доступ к сайту</span>
                         </label>
                     </div>
@@ -219,10 +221,43 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const addUserRole = document.getElementById('add-user-role');
+    const addUserSiteAccess = document.getElementById('add-user-site-access');
+    const addUserPassword = document.getElementById('add-user-password');
     const searchInput = document.getElementById('user-search');
     const rows = Array.from(document.querySelectorAll('[data-user-row]'));
     const emptyRow = document.getElementById('user-search-empty');
     const count = document.getElementById('user-search-count');
+
+    let regularUserSiteAccess = addUserSiteAccess.checked;
+
+    function syncNewUserPassword() {
+        const isAdmin = addUserRole.value === 'admin';
+        if (isAdmin) {
+            addUserSiteAccess.checked = true;
+            addUserSiteAccess.disabled = true;
+        } else {
+            addUserSiteAccess.disabled = false;
+            addUserSiteAccess.checked = regularUserSiteAccess;
+        }
+
+        const passwordIsRequired = isAdmin || addUserSiteAccess.checked;
+        addUserPassword.disabled = !passwordIsRequired;
+        addUserPassword.required = passwordIsRequired;
+        addUserPassword.placeholder = passwordIsRequired
+            ? 'Введите пароль'
+            : 'Будет создан автоматически';
+        if (!passwordIsRequired) {
+            addUserPassword.value = '';
+        }
+    }
+
+    addUserSiteAccess.addEventListener('change', function () {
+        regularUserSiteAccess = addUserSiteAccess.checked;
+        syncNewUserPassword();
+    });
+    addUserRole.addEventListener('change', syncNewUserPassword);
+    syncNewUserPassword();
 
     searchInput.addEventListener('input', function () {
         const query = searchInput.value.trim().toLocaleLowerCase('ru-RU');

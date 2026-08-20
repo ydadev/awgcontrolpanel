@@ -185,12 +185,12 @@ class SettingsController {
         
         $name = trim($_POST['name'] ?? '');
         $email = trim($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
         $role = ($_POST['role'] ?? 'user') === 'admin' ? 'admin' : 'user';
-        $status = $role === 'admin' || !empty($_POST['site_access']) ? 'active' : 'disabled';
+        $siteAccess = $role === 'admin' || !empty($_POST['site_access']);
+        $status = $siteAccess ? 'active' : 'disabled';
         
-        if (empty($name) || empty($email) || empty($password)) {
-            $_SESSION['settings_error'] = 'All fields are required';
+        if (empty($name) || empty($email)) {
+            $_SESSION['settings_error'] = 'Name and email are required';
             header('Location: /users');
             exit;
         }
@@ -201,8 +201,14 @@ class SettingsController {
             exit;
         }
         
-        if (strlen($password) < 6) {
-            $_SESSION['settings_error'] = 'Password must be at least 6 characters';
+        try {
+            $password = UserPasswordPolicy::resolveForNewUser(
+                $_POST['password'] ?? '',
+                $role,
+                $siteAccess
+            );
+        } catch (InvalidArgumentException $e) {
+            $_SESSION['settings_error'] = $e->getMessage();
             header('Location: /users');
             exit;
         }
