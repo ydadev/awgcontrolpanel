@@ -1532,7 +1532,7 @@ Router::get('/clients/{id}', function ($params) {
         $rawWireguardQrCode = '';
         $rawWireguardTitle = '';
         $rawWireguardHint = '';
-        $simpleQrCode = (string) ($clientData['qr_code'] ?? '');
+        $simpleQrCode = '';
         $isAwg2 = false;
         $isWireguardFamily = false;
         try {
@@ -1559,6 +1559,8 @@ Router::get('/clients/{id}', function ($params) {
                 if ($generatedSimpleQr !== '') {
                     $simpleQrCode = $generatedSimpleQr;
                 }
+            } else {
+                $simpleQrCode = (string) ($clientData['qr_code'] ?? '');
             }
             $isWireguardFamily = in_array($protocolSlug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true);
             if ($protocol && ($protocol['output_template'] ?? '') !== '') {

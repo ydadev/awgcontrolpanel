@@ -28,9 +28,6 @@ class ConnectionEmailService {
 
         $qrCodes = [];
         $simpleQr = VpnClient::generateQRCode($config, $protocolSlug);
-        if ($simpleQr === '') {
-            $simpleQr = (string) ($clientData['qr_code'] ?? '');
-        }
         if ($simpleQr !== '') {
             $qrCodes[] = ['label' => 'Amnezia VPN (Simple)', 'data_uri' => $simpleQr];
         }
