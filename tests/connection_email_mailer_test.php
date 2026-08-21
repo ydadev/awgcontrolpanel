@@ -66,14 +66,20 @@ foreach (['Amnezia VPN (Simple)', 'Amnezia VPN (vpn:// URL)', "'WireGuard' : 'Am
 
 $clientView = file_get_contents(__DIR__ . '/../templates/clients/view.twig');
 $qrUtil = file_get_contents(__DIR__ . '/../inc/QrUtil.php');
+$connectionEmailService = file_get_contents(__DIR__ . '/../inc/ConnectionEmailService.php');
+$router = file_get_contents(__DIR__ . '/../public/index.php');
 if (
     !is_string($clientView)
     || strpos($clientView, 'openQrModal(this)') === false
     || strpos($clientView, 'width: min(100%, 720px)') === false
     || !is_string($qrUtil)
     || strpos($qrUtil, 'DEFAULT_SIZE = 1200') === false
+    || !is_string($connectionEmailService)
+    || strpos($connectionEmailService, "clientData['qr_code']") !== false
+    || !is_string($router)
+    || strpos($router, '$simpleQrCode = \'\';') === false
 ) {
-    fwrite(STDERR, "Large clickable QR rendering is missing\n");
+    fwrite(STDERR, "Large clickable QR rendering or stale QR protection is missing\n");
     exit(1);
 }
 
