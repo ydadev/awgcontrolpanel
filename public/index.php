@@ -1232,6 +1232,7 @@ Router::get('/servers/{id}', function ($params) {
             'can_manage_server' => $canManageServer,
             'can_create_clients' => $canCreateClients,
             'connection_users' => $connectionUsers,
+            'local_bypass_server_enabled' => ClientAllowedIpsPolicy::isServerEnabled($serverId),
         ]);
     } catch (Exception $e) {
         error_log('Server view error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
@@ -1454,7 +1455,10 @@ Router::post('/servers/{id}/clients/create', function ($params) {
                 $protocolId = null;
             }
         }
-        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $clientName, $expiresInDays, $protocolId, $username, $clientName);
+        $allowedIpsMode = !empty($_POST['local_network_bypass'])
+            ? ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS
+            : ClientAllowedIpsPolicy::MODE_FULL;
+        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $clientName, $expiresInDays, $protocolId, $username, $clientName, $allowedIpsMode);
 
         // Set traffic limit if specified
         if ($trafficLimitBytes !== null && $trafficLimitBytes > 0) {
@@ -1529,6 +1533,7 @@ Router::get('/clients/{id}', function ($params) {
         $rawWireguardTitle = '';
         $rawWireguardHint = '';
         $isAwg2 = false;
+        $isWireguardFamily = false;
         try {
             $pdo = DB::conn();
             $protocol = null;
@@ -1603,6 +1608,7 @@ Router::get('/clients/{id}', function ($params) {
             'raw_wireguard_title' => $rawWireguardTitle,
             'raw_wireguard_hint' => $rawWireguardHint,
             'is_awg2' => $isAwg2,
+            'is_wireguard_family' => $isWireguardFamily,
             'connection_email_message' => $connectionEmailMessage
         ]);
     } catch (Exception $e) {
@@ -3770,6 +3776,9 @@ Router::post('/api/clients/create', function () {
     $expiresInDays = isset($data['expires_in_days']) ? (int) $data['expires_in_days'] : null;
     $protocolId = isset($data['protocol_id']) ? (int) $data['protocol_id'] : null;
     $username = isset($data['username']) ? trim((string) $data['username']) : null;
+    $allowedIpsMode = !empty($data['local_network_bypass'])
+        ? ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS
+        : ClientAllowedIpsPolicy::MODE_FULL;
 
     if ($serverId <= 0) {
         http_response_code(400);
@@ -3810,7 +3819,7 @@ Router::post('/api/clients/create', function () {
             $protocolId = null;
         }
 
-        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $name, $expiresInDays, $protocolId, $username, $name);
+        $clientId = VpnClient::create($serverId, (int) $connectionOwner['id'], $name, $expiresInDays, $protocolId, $username, $name, $allowedIpsMode);
 
         $client = new VpnClient($clientId);
 
@@ -4398,6 +4407,14 @@ Router::post('/settings/two-factor/test', function () {
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
     $controller->testEmailTwoFactor();
+});
+
+Router::post('/settings/allowed-ips', function () {
+    requireAdmin();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->saveClientAllowedIps();
 });
 
 // LDAP settings page
