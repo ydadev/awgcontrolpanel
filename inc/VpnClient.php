@@ -295,7 +295,7 @@ class VpnClient
             }
 
             $config = self::applyClientMtuOverride($config, $serverData);
-            $config = self::applyClientAllowedIpsMode($config, $allowedIpsMode);
+            $config = self::applyClientAllowedIpsMode($config, $allowedIpsMode, $endpointHost);
 
             $qrCode = self::generateQRCode($config, $configSlug);
             self::addClientToServer($serverData, $keys['public'], $clientIP);
@@ -1572,9 +1572,9 @@ class VpnClient
         );
     }
 
-    private static function applyClientAllowedIpsMode(string $config, string $mode): string
+    private static function applyClientAllowedIpsMode(string $config, string $mode, string $endpointHost = ''): string
     {
-        $allowedIps = ClientAllowedIpsPolicy::allowedIps($mode);
+        $allowedIps = ClientAllowedIpsPolicy::allowedIpsForEndpoint($mode, $endpointHost);
         $count = 0;
         $updated = preg_replace(
             '/^[ \t]*AllowedIPs[ \t]*=.*$/mi',
@@ -2599,7 +2599,7 @@ class VpnClient
         $allowedIpsMode = ClientAllowedIpsPolicy::normalizeMode(
             (string) ($this->data['allowed_ips_mode'] ?? ClientAllowedIpsPolicy::MODE_FULL)
         );
-        $config = self::applyClientAllowedIpsMode($config, $allowedIpsMode);
+        $config = self::applyClientAllowedIpsMode($config, $allowedIpsMode, $endpointHost);
 
         $qrCode = self::generateQRCode($config, $configSlug);
 

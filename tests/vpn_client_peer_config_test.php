@@ -90,7 +90,7 @@ if (!str_contains($directAwgConfig, 'MTU = 1280') || str_contains($directAwgConf
 
 $allowedIpsMethod = new ReflectionMethod(VpnClient::class, 'applyClientAllowedIpsMode');
 $allowedIpsMethod->setAccessible(true);
-$splitConfig = $allowedIpsMethod->invoke(null, $clientConfig, ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS);
+$splitConfig = $allowedIpsMethod->invoke(null, $clientConfig, ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS, '194.87.69.189');
 if (str_contains($splitConfig, 'AllowedIPs = 0.0.0.0/0, ::/0')) {
     fwrite(STDERR, "Local-bypass mode retained the full-tunnel AllowedIPs\n");
     exit(1);

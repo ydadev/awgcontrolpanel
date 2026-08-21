@@ -22,7 +22,7 @@ $allowedIps = ClientAllowedIpsPolicy::allowedIps(ClientAllowedIpsPolicy::MODE_LO
 $entries = array_map('trim', explode(',', $allowedIps));
 $ipv4Entries = array_values(array_filter($entries, static fn(string $entry): bool => strpos($entry, ':') === false));
 
-if (count($ipv4Entries) !== 273) {
+if (count($ipv4Entries) !== 150) {
     failAllowedIpsTest('Unexpected IPv4 prefix count: ' . count($ipv4Entries));
 }
 
@@ -41,14 +41,44 @@ foreach (['1.1.1.1', '8.8.8.8', '77.88.8.8'] as $address) {
 
 foreach ([
     '10.10.10.2', '100.64.0.1', '169.254.1.1', '172.16.0.1', '192.168.1.1',
-    '224.0.0.251', '91.206.92.82', '185.211.103.32', '194.87.69.189',
-    '195.133.67.55', '176.32.37.19', '185.211.103.180',
+    '224.0.0.251',
 ] as $address) {
     foreach ($ipv4Entries as $cidr) {
         if (ipv4MatchesCidr($address, $cidr)) {
             failAllowedIpsTest('Excluded address is still tunneled: ' . $address . ' via ' . $cidr);
         }
     }
+}
+
+foreach (['91.206.92.82', '185.211.103.32', '194.87.69.189', '195.133.67.55', '176.32.37.19', '185.211.103.180'] as $address) {
+    $matched = false;
+    foreach ($ipv4Entries as $cidr) {
+        if (ipv4MatchesCidr($address, $cidr)) {
+            $matched = true;
+            break;
+        }
+    }
+    if (!$matched) {
+        failAllowedIpsTest('Unrelated VPN endpoint is absent from the base list: ' . $address);
+    }
+}
+
+$spbAllowedIps = ClientAllowedIpsPolicy::allowedIpsForEndpoint(ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS, '194.87.69.189');
+$spbEntries = array_map('trim', explode(',', $spbAllowedIps));
+foreach ($spbEntries as $cidr) {
+    if (strpos($cidr, ':') === false && ipv4MatchesCidr('194.87.69.189', $cidr)) {
+        failAllowedIpsTest('Current server endpoint is still tunneled via ' . $cidr);
+    }
+}
+$fraMatched = false;
+foreach ($spbEntries as $cidr) {
+    if (strpos($cidr, ':') === false && ipv4MatchesCidr('195.133.67.55', $cidr)) {
+        $fraMatched = true;
+        break;
+    }
+}
+if (!$fraMatched) {
+    failAllowedIpsTest('Unrelated server endpoint was excluded from the client config');
 }
 
 foreach (['fc00::/7', 'fe80::/10', 'ff00::/8'] as $excludedIpv6) {
