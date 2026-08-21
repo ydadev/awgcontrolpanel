@@ -23,32 +23,22 @@ class QrUtil
         }
         // Prefer Composer library; PNG when GD is available, otherwise SVG fallback
         if (class_exists(QrCode::class)) {
-            $lastError = null;
-            foreach ([ErrorCorrectionLevel::Medium, ErrorCorrectionLevel::Low] as $level) {
-                try {
-                    $qrCode = QrCode::create($text)
-                        ->setSize($size)
-                        ->setMargin($margin)
-                        ->setErrorCorrectionLevel($level)
-                        ->setEncoding(new Encoding('UTF-8'));
+            $qrCode = QrCode::create($text)
+                ->setSize($size)
+                ->setMargin($margin)
+                ->setErrorCorrectionLevel(ErrorCorrectionLevel::Medium)
+                ->setEncoding(new Encoding('UTF-8'));
 
-                    if (class_exists(PngWriter::class) && extension_loaded('gd')) {
-                        // Avoid labels in PNG to sidestep GD freetype dependency.
-                        $writer = new PngWriter();
-                        $result = $writer->write($qrCode);
-                        return 'data:image/png;base64,' . base64_encode($result->getString());
-                    }
-                    if (class_exists(SvgWriter::class)) {
-                        $writer = new SvgWriter();
-                        $result = $writer->write($qrCode, null, Label::create($label)->setAlignment(LabelAlignment::Center));
-                        return 'data:image/svg+xml;base64,' . base64_encode($result->getString());
-                    }
-                } catch (Throwable $e) {
-                    $lastError = $e;
-                }
+            if (class_exists(PngWriter::class) && extension_loaded('gd')) {
+                // Avoid labels in PNG to sidestep GD freetype dependency.
+                $writer = new PngWriter();
+                $result = $writer->write($qrCode);
+                return 'data:image/png;base64,' . base64_encode($result->getString());
             }
-            if ($lastError !== null) {
-                throw $lastError;
+            if (class_exists(SvgWriter::class)) {
+                $writer = new SvgWriter();
+                $result = $writer->write($qrCode, null, Label::create($label)->setAlignment(LabelAlignment::Center));
+                return 'data:image/svg+xml;base64,' . base64_encode($result->getString());
             }
         }
         // Fallback to phpqrcode.php if available
