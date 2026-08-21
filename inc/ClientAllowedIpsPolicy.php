@@ -27,6 +27,9 @@ final class ClientAllowedIpsPolicy
         '178.205.241.240/29',
         '178.205.139.156/32',
         '178.207.157.126/32',
+    ];
+
+    private const LEGACY_SERVER_ENDPOINTS = [
         '91.206.92.82/32',
         '185.211.103.32/32',
         '194.87.69.189/32',
@@ -73,6 +76,37 @@ final class ClientAllowedIpsPolicy
         return self::get()['allowed_ips'];
     }
 
+    public static function allowedIpsForEndpoint(string $mode, string $endpoint): string
+    {
+        $allowedIps = self::allowedIps($mode);
+        if (self::normalizeMode($mode) !== self::MODE_LOCAL_BYPASS) {
+            return $allowedIps;
+        }
+
+        $packed = @inet_pton(trim($endpoint));
+        if ($packed === false || strlen($packed) !== 4) {
+            return $allowedIps;
+        }
+
+        $excluded = ['start' => unpack('N', $packed)[1], 'prefix' => 32];
+        $entries = [];
+        foreach (array_map('trim', explode(',', $allowedIps)) as $entry) {
+            if ($entry === '' || strpos($entry, ':') !== false) {
+                if ($entry !== '') {
+                    $entries[] = $entry;
+                }
+                continue;
+            }
+
+            $network = self::parseIpv4Cidr($entry);
+            foreach (self::excludeNetwork($network, $excluded) as $remaining) {
+                $entries[] = long2ip($remaining['start']) . '/' . $remaining['prefix'];
+            }
+        }
+
+        return implode(', ', $entries);
+    }
+
     public static function get(): array
     {
         if (self::$cachedSettings !== null) {
@@ -90,7 +124,14 @@ final class ClientAllowedIpsPolicy
             if ($value) {
                 $stored = json_decode((string) $value, true);
                 if (is_array($stored)) {
-                    $settings['allowed_ips_text'] = (string) ($stored['allowed_ips_text'] ?? $settings['allowed_ips_text']);
+                    $storedText = (string) ($stored['allowed_ips_text'] ?? $settings['allowed_ips_text']);
+                    if (
+                        (int) ($stored['endpoint_policy_version'] ?? 1) < 2
+                        && trim($storedText) === trim(self::legacyDefaultAllowedIpsText())
+                    ) {
+                        $storedText = self::defaultAllowedIpsText();
+                    }
+                    $settings['allowed_ips_text'] = $storedText;
                     $settings['server_ids'] = self::sanitizeServerIds($stored['server_ids'] ?? []);
                 }
             }
@@ -131,6 +172,7 @@ final class ClientAllowedIpsPolicy
         $stored = [
             'allowed_ips_text' => $text,
             'server_ids' => $validServerIds,
+            'endpoint_policy_version' => 2,
         ];
         self::saveRaw($stored);
         self::$cachedSettings = [
@@ -167,6 +209,14 @@ final class ClientAllowedIpsPolicy
     public static function defaultAllowedIpsText(): string
     {
         return implode("\n", array_merge(self::buildIpv4Complement(), self::IPV6_ALLOWED));
+    }
+
+    private static function legacyDefaultAllowedIpsText(): string
+    {
+        return implode("\n", array_merge(
+            self::buildIpv4Complement(array_merge(self::IPV4_EXCLUSIONS, self::LEGACY_SERVER_ENDPOINTS)),
+            self::IPV6_ALLOWED
+        ));
     }
 
     private static function defaults(): array
@@ -267,10 +317,10 @@ final class ClientAllowedIpsPolicy
         $insert->execute([self::SETTINGS_NAMESPACE, self::SETTINGS_KEY, $json]);
     }
 
-    private static function buildIpv4Complement(): array
+    private static function buildIpv4Complement(?array $exclusions = null): array
     {
         $networks = [['start' => 0, 'prefix' => 0]];
-        foreach (self::IPV4_EXCLUSIONS as $cidr) {
+        foreach ($exclusions ?? self::IPV4_EXCLUSIONS as $cidr) {
             $excluded = self::parseIpv4Cidr($cidr);
             $next = [];
             foreach ($networks as $network) {
