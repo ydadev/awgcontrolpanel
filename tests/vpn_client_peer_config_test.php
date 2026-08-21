@@ -88,6 +88,30 @@ if (!str_contains($directAwgConfig, 'MTU = 1280') || str_contains($directAwgConf
     exit(1);
 }
 
+$allowedIpsMethod = new ReflectionMethod(VpnClient::class, 'applyClientAllowedIpsMode');
+$allowedIpsMethod->setAccessible(true);
+$splitConfig = $allowedIpsMethod->invoke(null, $clientConfig, ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS);
+if (str_contains($splitConfig, 'AllowedIPs = 0.0.0.0/0, ::/0')) {
+    fwrite(STDERR, "Local-bypass mode retained the full-tunnel AllowedIPs\n");
+    exit(1);
+}
+foreach (['10.0.0.0/8', '192.168.0.0/16', '194.87.69.189/32'] as $excludedCidr) {
+    if (str_contains($splitConfig, $excludedCidr)) {
+        fwrite(STDERR, "Local-bypass config includes excluded CIDR {$excludedCidr}\n");
+        exit(1);
+    }
+}
+if (!str_contains($splitConfig, 'AllowedIPs = 0.0.0.0/5')) {
+    fwrite(STDERR, "Local-bypass config did not receive the calculated AllowedIPs\n");
+    exit(1);
+}
+
+$fullConfig = $allowedIpsMethod->invoke(null, $splitConfig, ClientAllowedIpsPolicy::MODE_FULL);
+if (!str_contains($fullConfig, 'AllowedIPs = 0.0.0.0/0, ::/0')) {
+    fwrite(STDERR, "Full-tunnel mode did not restore the default AllowedIPs\n");
+    exit(1);
+}
+
 $quickConfig = <<<'CONF'
 [Interface]
 PrivateKey = server-private-key

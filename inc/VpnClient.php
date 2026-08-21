@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/WireGuardStats.php';
+require_once __DIR__ . '/ClientAllowedIpsPolicy.php';
 
 /**
  * VPN Client Management Class
@@ -45,7 +46,7 @@ class VpnClient
      * @param int|null $expiresInDays Days until expiration (null = never expires)
      * @return int Client ID
      */
-    public static function create(int $serverId, int $userId, string $name, ?int $expiresInDays = null, ?int $protocolId = null, ?string $username = null, ?string $login = null): int
+    public static function create(int $serverId, int $userId, string $name, ?int $expiresInDays = null, ?int $protocolId = null, ?string $username = null, ?string $login = null, string $allowedIpsMode = ClientAllowedIpsPolicy::MODE_FULL): int
     {
         $pdo = DB::conn();
 
@@ -188,6 +189,13 @@ class VpnClient
         $configSlug = (!empty($serverData['wireguard_compatible']) && $slug === 'awg2')
             ? 'wireguard-standard'
             : $slug;
+        $allowedIpsMode = ClientAllowedIpsPolicy::normalizeMode($allowedIpsMode);
+        if (
+            $allowedIpsMode === ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS
+            && !ClientAllowedIpsPolicy::supports((int) ($serverData['id'] ?? 0), $slug)
+        ) {
+            throw new InvalidArgumentException('Режим локальных сетей недоступен для выбранного сервера или протокола.');
+        }
         $endpointHost = $isWireguard
             ? self::resolveWireguardEndpointHost((string) ($serverData['host'] ?? ''))
             : (string) ($serverData['host'] ?? '');
@@ -287,6 +295,7 @@ class VpnClient
             }
 
             $config = self::applyClientMtuOverride($config, $serverData);
+            $config = self::applyClientAllowedIpsMode($config, $allowedIpsMode);
 
             $qrCode = self::generateQRCode($config, $configSlug);
             self::addClientToServer($serverData, $keys['public'], $clientIP);
@@ -663,8 +672,8 @@ class VpnClient
         // Insert into database
         $stmt = $pdo->prepare('
             INSERT INTO vpn_clients 
-            (server_id, user_id, protocol_id, name, client_ip, public_key, private_key, preshared_key, config, qr_code, status, expires_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (server_id, user_id, protocol_id, allowed_ips_mode, name, client_ip, public_key, private_key, preshared_key, config, qr_code, status, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
 
         try {
@@ -672,6 +681,7 @@ class VpnClient
                 $serverId,
                 $userId,
                 $protocolId ?: null,
+                $allowedIpsMode,
                 $loginFinal,
                 $clientIP,
                 $pub,
@@ -849,6 +859,7 @@ class VpnClient
 
         $qrCode = $config !== '' ? self::generateQRCode($config, $serverData['install_protocol'] ?? '') : '';
         $status = strtolower($clientData['status'] ?? 'active') === 'disabled' ? 'disabled' : 'active';
+        $allowedIpsMode = ClientAllowedIpsPolicy::normalizeMode($clientData['allowed_ips_mode'] ?? null);
 
         $expiresAt = $clientData['expires_at'] ?? null;
         if ($expiresAt) {
@@ -858,8 +869,8 @@ class VpnClient
 
         $stmt = $pdo->prepare('
             INSERT INTO vpn_clients 
-            (server_id, user_id, name, client_ip, public_key, private_key, preshared_key, config, qr_code, status, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (server_id, user_id, name, client_ip, public_key, private_key, preshared_key, config, qr_code, allowed_ips_mode, status, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
 
         $stmt->execute([
@@ -872,6 +883,7 @@ class VpnClient
             $presharedKey,
             $config,
             $qrCode,
+            $allowedIpsMode,
             $status,
             $expiresAt
         ]);
@@ -1558,6 +1570,25 @@ class VpnClient
             $config,
             1
         );
+    }
+
+    private static function applyClientAllowedIpsMode(string $config, string $mode): string
+    {
+        $allowedIps = ClientAllowedIpsPolicy::allowedIps($mode);
+        $count = 0;
+        $updated = preg_replace(
+            '/^[ \t]*AllowedIPs[ \t]*=.*$/mi',
+            'AllowedIPs = ' . $allowedIps,
+            $config,
+            1,
+            $count
+        );
+
+        if ($updated === null || $count !== 1) {
+            throw new RuntimeException('Не удалось применить AllowedIPs к клиентской конфигурации.');
+        }
+
+        return $updated;
     }
 
     /**
@@ -2565,6 +2596,10 @@ class VpnClient
         }
 
         $config = self::applyClientMtuOverride($config, $serverData);
+        $allowedIpsMode = ClientAllowedIpsPolicy::normalizeMode(
+            (string) ($this->data['allowed_ips_mode'] ?? ClientAllowedIpsPolicy::MODE_FULL)
+        );
+        $config = self::applyClientAllowedIpsMode($config, $allowedIpsMode);
 
         $qrCode = self::generateQRCode($config, $configSlug);
 

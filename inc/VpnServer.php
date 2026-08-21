@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/UserServerAccess.php';
+require_once __DIR__ . '/ClientAllowedIpsPolicy.php';
 
 /**
  * VPN Server Management Class
@@ -957,8 +958,8 @@ BASH;
         try {
             // Get all clients for this server
             $stmt = $pdo->prepare('
-                SELECT id, name, client_ip, public_key, private_key, preshared_key, 
-                       config, status, expires_at, created_at
+                SELECT id, name, client_ip, public_key, private_key, preshared_key,
+                       config, allowed_ips_mode, status, expires_at, created_at
                 FROM vpn_clients 
                 WHERE server_id = ?
             ');
@@ -1118,9 +1119,9 @@ BASH;
                 // Insert client
                 $stmt = $pdo->prepare('
                     INSERT INTO vpn_clients 
-                    (server_id, user_id, name, client_ip, public_key, private_key, preshared_key, 
-                     config, status, expires_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (server_id, user_id, name, client_ip, public_key, private_key, preshared_key,
+                     config, allowed_ips_mode, status, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ');
 
                 $stmt->execute([
@@ -1132,6 +1133,7 @@ BASH;
                     $clientData['private_key'],
                     $clientData['preshared_key'],
                     $clientData['config'],
+                    ClientAllowedIpsPolicy::normalizeMode($clientData['allowed_ips_mode'] ?? null),
                     'disabled', // Restore as disabled for safety
                     $clientData['expires_at']
                 ]);

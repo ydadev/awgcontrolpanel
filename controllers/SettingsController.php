@@ -14,6 +14,7 @@ class SettingsController {
         $apiKey = $this->getApiKey('openrouter');
         $branding = Branding::get(Config::get('APP_NAME', 'AWG Control Panel'));
         $twoFactorSettings = EmailTwoFactorSettings::forForm();
+        $clientAllowedIpsSettings = ClientAllowedIpsPolicy::get();
 
         // LDAP data for embedded tab
         $stmt = $this->pdo->query("SELECT * FROM ldap_configs WHERE id = 1");
@@ -49,6 +50,8 @@ class SettingsController {
             'branding' => $branding,
             'two_factor_settings' => $twoFactorSettings,
             'two_factor_test_recipient' => Auth::user()['email'] ?? '',
+            'client_allowed_ips_settings' => $clientAllowedIpsSettings,
+            'client_allowed_ips_servers' => VpnServer::listAll(),
             // LDAP
             'config' => $config,
             'mappings' => $mappings,
@@ -362,6 +365,28 @@ class SettingsController {
         }
 
         header('Location: /settings#two-factor');
+        exit;
+    }
+
+    public function saveClientAllowedIps() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /settings#allowed-ips');
+            exit;
+        }
+        if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+            $_SESSION['settings_error'] = 'Сессия формы устарела. Обновите страницу и попробуйте снова.';
+            header('Location: /settings#allowed-ips');
+            exit;
+        }
+
+        try {
+            ClientAllowedIpsPolicy::saveFromInput($_POST);
+            $_SESSION['settings_success'] = 'Настройки AllowedIPs сохранены';
+        } catch (Throwable $e) {
+            $_SESSION['settings_error'] = 'Не удалось сохранить AllowedIPs: ' . $e->getMessage();
+        }
+
+        header('Location: /settings#allowed-ips');
         exit;
     }
 

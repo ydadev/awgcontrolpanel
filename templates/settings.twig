@@ -55,6 +55,10 @@
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap">
                 <i class="fas fa-shield-alt mr-2"></i>2FA
             </a>
+            <a href="#" onclick="showTab('allowed-ips'); return false;" id="tab-allowed-ips"
+               class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap">
+                <i class="fas fa-route mr-2"></i>AllowedIPs
+            </a>
             <a href="#" onclick="showTab('ldap'); return false;" id="tab-ldap"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-network-wired mr-2"></i>LDAP
@@ -417,6 +421,56 @@
                     <p class="mt-2 text-xs text-gray-500">Сначала сохраните адреса и порт либо заполните их выше и нажмите «Сохранить». Для включения 2FA требуется успешный тест.</p>
                 </form>
             </div>
+        </div>
+    </div>
+
+    <!-- Client AllowedIPs Tab -->
+    <div id="content-allowed-ips" class="tab-content hidden">
+        <div class="bg-white shadow rounded-lg">
+            <div class="px-6 py-5 border-b border-gray-200">
+                <h2 class="text-lg font-medium text-gray-900">
+                    <i class="fas fa-route mr-2 text-purple-600"></i>Клиентский AllowedIPs
+                </h2>
+            </div>
+            <form method="POST" action="/settings/allowed-ips" class="px-6 py-5">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-8">
+                    <div>
+                        <label for="allowedIpsText" class="block text-sm font-medium text-gray-700 mb-2">Список маршрутов</label>
+                        <textarea id="allowedIpsText" name="allowed_ips_text" rows="24" required spellcheck="false"
+                                  class="block w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-xs leading-5 focus:ring-purple-500 focus:border-purple-500">{{ client_allowed_ips_settings.allowed_ips_text }}</textarea>
+                        <p class="mt-2 text-xs text-gray-500">Один CIDR на строку или значения через запятую. Комментарии начинаются с <code>--</code>, <code>#</code> или <code>//</code>.</p>
+                    </div>
+
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-900 mb-2">Серверы с доступной галочкой</h3>
+                        <div class="border-t border-gray-200">
+                            {% for allowed_server in client_allowed_ips_servers %}
+                            <label class="flex items-center gap-3 py-3 border-b border-gray-200 cursor-pointer">
+                                <input type="checkbox" name="server_ids[]" value="{{ allowed_server.id }}"
+                                       {% if allowed_server.id in client_allowed_ips_settings.server_ids %}checked{% endif %}
+                                       class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                <span class="min-w-0">
+                                    <span class="block text-sm font-medium text-gray-900">{{ allowed_server.name }}</span>
+                                    <span class="block text-xs text-gray-500 truncate">{{ allowed_server.host }}</span>
+                                </span>
+                            </label>
+                            {% else %}
+                            <p class="py-3 text-sm text-gray-500">Серверы не найдены.</p>
+                            {% endfor %}
+                        </div>
+                        <p class="mt-3 text-xs text-gray-500">На выбранных серверах параметр появится только для WireGuard и AmneziaWG. Без галочки используется <code>0.0.0.0/0, ::/0</code>.</p>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex flex-wrap items-center gap-4">
+                    <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                        <i class="fas fa-save mr-2"></i>Сохранить
+                    </button>
+                    <span class="text-xs text-gray-500">Изменения применятся к новым подключениям с выбранной галочкой и при следующей регенерации таких конфигураций.</span>
+                </div>
+            </form>
         </div>
     </div>
 
