@@ -13,6 +13,10 @@ $expectations = [
     [UserRolePolicy::canManageUser('admin', 'admin'), true, 'administrator must manage accounts'],
     [UserRolePolicy::canAssignRole('admin', 'moderator'), true, 'administrator must assign moderator role'],
     [UserRolePolicy::canAssignRole('moderator', 'admin'), false, 'moderator must not assign roles'],
+    [UserRolePolicy::canProvisionConnectionFor('moderator', 'user', false), true, 'moderator must provision regular users'],
+    [UserRolePolicy::canProvisionConnectionFor('moderator', 'moderator', true), true, 'moderator must provision self'],
+    [UserRolePolicy::canProvisionConnectionFor('moderator', 'moderator', false), false, 'moderator must not provision other moderators'],
+    [UserRolePolicy::canProvisionConnectionFor('moderator', 'admin', false), false, 'moderator must not provision administrators'],
 ];
 
 foreach ($expectations as [$actual, $expected, $message]) {

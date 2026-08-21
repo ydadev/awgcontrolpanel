@@ -31,6 +31,18 @@ final class UserRolePolicy {
         return $actorRole === self::ADMIN && self::isKnownRole($targetRole);
     }
 
+    public static function canProvisionConnectionFor(string $actorRole, string $targetRole, bool $isSelf): bool {
+        if ($actorRole === self::ADMIN) {
+            return true;
+        }
+
+        if ($actorRole === self::MODERATOR) {
+            return $isSelf || $targetRole === self::USER;
+        }
+
+        return $isSelf;
+    }
+
     public static function hasAdministrativeSiteAccess(string $role): bool {
         return in_array($role, [self::ADMIN, self::MODERATOR], true);
     }

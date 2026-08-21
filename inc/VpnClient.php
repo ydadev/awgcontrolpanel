@@ -766,6 +766,21 @@ class VpnClient
         return $stmt->fetchAll();
     }
 
+    public static function listByServerAndProtocolForModerator(int $serverId, int $protocolId, int $userId): array
+    {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('
+            SELECT c.*, p.name as protocol_name, u.email as owner_email, u.name as owner_name, u.role as owner_role
+            FROM vpn_clients c
+            LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
+            WHERE c.server_id = ? AND c.protocol_id = ? AND (c.user_id = ? OR u.role = \'user\')
+            ORDER BY c.created_at DESC
+        ');
+        $stmt->execute([$serverId, $protocolId, $userId]);
+        return $stmt->fetchAll();
+    }
+
     /**
      * Import client data directly from backup without touching remote server.
      */
@@ -1960,6 +1975,21 @@ class VpnClient
             LEFT JOIN protocols p ON c.protocol_id = p.id
             LEFT JOIN users u ON c.user_id = u.id
             WHERE c.server_id = ? AND c.user_id = ?
+            ORDER BY c.created_at DESC
+        ');
+        $stmt->execute([$serverId, $userId]);
+        return $stmt->fetchAll();
+    }
+
+    public static function listByServerForModerator(int $serverId, int $userId): array
+    {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('
+            SELECT c.*, p.name as protocol_name, p.show_text_content, u.email as owner_email, u.name as owner_name, u.role as owner_role
+            FROM vpn_clients c
+            LEFT JOIN protocols p ON c.protocol_id = p.id
+            LEFT JOIN users u ON c.user_id = u.id
+            WHERE c.server_id = ? AND (c.user_id = ? OR u.role = \'user\')
             ORDER BY c.created_at DESC
         ');
         $stmt->execute([$serverId, $userId]);

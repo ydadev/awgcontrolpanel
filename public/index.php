@@ -183,7 +183,8 @@ function userCanCreateClients(array $user, int $serverId): bool
 
 function listConnectionOwnerOptions(int $serverId, array $currentUser): array
 {
-    if (($currentUser['role'] ?? '') !== 'admin') {
+    $currentRole = (string) ($currentUser['role'] ?? 'user');
+    if (!in_array($currentRole, ['admin', 'moderator'], true)) {
         return [[
             'id' => (int) $currentUser['id'],
             'email' => $currentUser['email'] ?? '',
@@ -194,6 +195,9 @@ function listConnectionOwnerOptions(int $serverId, array $currentUser): array
     }
 
     $pdo = DB::conn();
+    $targetFilter = $currentRole === 'moderator'
+        ? 'WHERE (u.id = ? OR u.role = \'user\')'
+        : '';
     // Site access controls login only; admins can provision for users who cannot log in.
     $stmt = $pdo->prepare('
         SELECT
@@ -212,15 +216,25 @@ function listConnectionOwnerOptions(int $serverId, array $currentUser): array
             ON usa.user_id = u.id
             AND usa.server_id = ?
             AND usa.can_view = 1
+        ' . $targetFilter . '
         ORDER BY CASE WHEN u.role = \'admin\' THEN 0 ELSE 1 END, u.email ASC
     ');
-    $stmt->execute([$serverId]);
+    $parameters = [$serverId];
+    if ($currentRole === 'moderator') {
+        $parameters[] = (int) $currentUser['id'];
+    }
+    $stmt->execute($parameters);
     return $stmt->fetchAll();
 }
 
 function resolveConnectionOwnerForCreateById(array $currentUser, int $serverId, int $targetUserId): array
 {
-    if (($currentUser['role'] ?? '') !== 'admin') {
+    $currentRole = (string) ($currentUser['role'] ?? 'user');
+    if (!in_array($currentRole, ['admin', 'moderator'], true)) {
+        return $currentUser;
+    }
+
+    if ($currentRole === 'moderator' && $targetUserId === (int) $currentUser['id']) {
         return $currentUser;
     }
 
@@ -253,6 +267,14 @@ function resolveConnectionOwnerForCreateById(array $currentUser, int $serverId, 
         throw new Exception('Selected user was not found');
     }
 
+    if (!UserRolePolicy::canProvisionConnectionFor(
+        $currentRole,
+        (string) ($owner['role'] ?? 'user'),
+        (int) $owner['id'] === (int) $currentUser['id']
+    )) {
+        throw new Exception('Moderators can create connections only for regular users');
+    }
+
     if (($owner['role'] ?? '') !== 'admin' && (int) ($owner['has_server_access'] ?? 0) !== 1) {
         throw new Exception('Selected user does not have access to this server');
     }
@@ -271,7 +293,18 @@ function userCanAccessClient(array $user, array $clientData): bool
         return true;
     }
 
-    if ((int) ($clientData['user_id'] ?? 0) !== (int) ($user['id'] ?? 0)) {
+    $isSelf = (int) ($clientData['user_id'] ?? 0) === (int) ($user['id'] ?? 0);
+    if (($user['role'] ?? '') === 'moderator' && !$isSelf) {
+        $stmt = DB::conn()->prepare('SELECT role FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([(int) ($clientData['user_id'] ?? 0)]);
+        if ((string) $stmt->fetchColumn() !== 'user') {
+            return false;
+        }
+        return UserServerAccess::canCreateClients(
+            (int) $user['id'],
+            (int) ($clientData['server_id'] ?? 0)
+        );
+    } elseif (!$isSelf) {
         return false;
     }
 
@@ -1111,13 +1144,29 @@ Router::get('/servers/{id}', function ($params) {
 
         $selectedProtocolId = isset($_GET['protocol_id']) ? (int) $_GET['protocol_id'] : 0;
         if ($selectedProtocolId > 0) {
-            $clients = $canManageServer
-                ? VpnClient::listByServerAndProtocol($serverId, $selectedProtocolId)
-                : VpnClient::listByServerAndProtocolForUser($serverId, $selectedProtocolId, (int) $user['id']);
+            if ($canManageServer) {
+                $clients = VpnClient::listByServerAndProtocol($serverId, $selectedProtocolId);
+            } elseif (($user['role'] ?? '') === 'moderator' && $canCreateClients) {
+                $clients = VpnClient::listByServerAndProtocolForModerator(
+                    $serverId,
+                    $selectedProtocolId,
+                    (int) $user['id']
+                );
+            } else {
+                $clients = VpnClient::listByServerAndProtocolForUser(
+                    $serverId,
+                    $selectedProtocolId,
+                    (int) $user['id']
+                );
+            }
         } else {
-            $clients = $canManageServer
-                ? VpnClient::listByServer($serverId)
-                : VpnClient::listByServerForUser($serverId, (int) $user['id']);
+            if ($canManageServer) {
+                $clients = VpnClient::listByServer($serverId);
+            } elseif (($user['role'] ?? '') === 'moderator' && $canCreateClients) {
+                $clients = VpnClient::listByServerForModerator($serverId, (int) $user['id']);
+            } else {
+                $clients = VpnClient::listByServerForUser($serverId, (int) $user['id']);
+            }
         }
 
         // Flash message from manual config import
