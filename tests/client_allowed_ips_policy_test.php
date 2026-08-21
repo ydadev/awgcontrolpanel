@@ -95,6 +95,15 @@ if (ClientAllowedIpsPolicy::supports(0, 'wireguard-standard')) {
     failAllowedIpsTest('Invalid server id was accepted');
 }
 
+$serverView = file_get_contents(__DIR__ . '/../templates/servers/view.twig');
+if (
+    !is_string($serverView)
+    || strpos($serverView, 'name="local_network_bypass"') === false
+    || !preg_match('/<input[^>]+name="local_network_bypass"[^>]+checked(?:\s|>)/i', $serverView)
+) {
+    failAllowedIpsTest('Local network bypass is not enabled by default');
+}
+
 $canonical = ClientAllowedIpsPolicy::canonicalizeAllowedIpsText("# test\n1.1.1.9/24 -- normalized\n8.8.8.8/32\n// ignored");
 if ($canonical !== '1.1.1.0/24, 8.8.8.8/32') {
     failAllowedIpsTest('Editable AllowedIPs text was not canonicalized: ' . $canonical);
