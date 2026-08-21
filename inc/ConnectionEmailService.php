@@ -27,9 +27,9 @@ class ConnectionEmailService {
         $protocolName = (string) ($protocol['name'] ?? $protocolSlug);
 
         $qrCodes = [];
-        $simpleQr = (string) ($clientData['qr_code'] ?? '');
+        $simpleQr = VpnClient::generateQRCode($config, $protocolSlug);
         if ($simpleQr === '') {
-            $simpleQr = VpnClient::generateQRCode($config, $protocolSlug);
+            $simpleQr = (string) ($clientData['qr_code'] ?? '');
         }
         if ($simpleQr !== '') {
             $qrCodes[] = ['label' => 'Amnezia VPN (Simple)', 'data_uri' => $simpleQr];
@@ -45,7 +45,12 @@ class ConnectionEmailService {
         if (in_array($protocolSlug, self::WIREGUARD_PROTOCOLS, true)) {
             try {
                 require_once __DIR__ . '/QrUtil.php';
-                $rawQr = QrUtil::pngBase64($config, 300, 1, 'WireGuard config');
+                $rawQr = QrUtil::pngBase64(
+                    $config,
+                    QrUtil::DEFAULT_SIZE,
+                    QrUtil::DEFAULT_MARGIN,
+                    'WireGuard config'
+                );
                 $qrCodes[] = [
                     'label' => $protocolSlug === 'wireguard-standard' ? 'WireGuard' : 'AmneziaWG',
                     'data_uri' => $rawQr,

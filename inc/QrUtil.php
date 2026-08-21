@@ -9,7 +9,10 @@ use Endroid\QrCode\Encoding\Encoding;
 
 class QrUtil
 {
-    public static function pngBase64(string $text, int $size = 300, int $margin = 1, string $label = 'Amnezia QR (old)'): string
+    public const DEFAULT_SIZE = 1200;
+    public const DEFAULT_MARGIN = 24;
+
+    public static function pngBase64(string $text, int $size = self::DEFAULT_SIZE, int $margin = self::DEFAULT_MARGIN, string $label = 'Amnezia QR (old)'): string
     {
         // Try to load Composer autoload if not yet loaded
         if (!class_exists(QrCode::class)) {

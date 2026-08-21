@@ -120,9 +120,9 @@ class EmailTwoFactorMailer {
                 'name' => $safeFileName . '-qr-' . $qrCount . '.' . $extension,
                 'mime' => $decoded['mime'],
             ];
-            $qrHtml .= '<div style="display:inline-block;vertical-align:top;margin:12px 20px 12px 0;text-align:center">'
-                . '<div style="margin-bottom:8px;font-weight:600">' . $escape($label) . '</div>'
-                . '<img src="cid:' . $cid . '" alt="' . $escape($label) . '" style="display:block;width:260px;max-width:100%;height:auto">'
+            $qrHtml .= '<div style="display:block;margin:28px 0;text-align:left">'
+                . '<div style="margin-bottom:12px;font-size:18px;font-weight:600">' . $escape($label) . '</div>'
+                . '<img src="cid:' . $cid . '" alt="' . $escape($label) . '" width="760" style="display:block;width:100%;max-width:760px;height:auto">'
                 . '</div>';
         }
 

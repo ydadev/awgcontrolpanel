@@ -1532,6 +1532,7 @@ Router::get('/clients/{id}', function ($params) {
         $rawWireguardQrCode = '';
         $rawWireguardTitle = '';
         $rawWireguardHint = '';
+        $simpleQrCode = (string) ($clientData['qr_code'] ?? '');
         $isAwg2 = false;
         $isWireguardFamily = false;
         try {
@@ -1552,6 +1553,12 @@ Router::get('/clients/{id}', function ($params) {
                 $clientData['show_text_content'] = !empty($protocol['show_text_content']);
                 $protocolSlug = $protocol['slug'] ?? '';
                 $isAwg2 = ($protocolSlug === 'awg2');
+            }
+            if (!empty($clientData['config'])) {
+                $generatedSimpleQr = VpnClient::generateQRCode((string) $clientData['config'], $protocolSlug);
+                if ($generatedSimpleQr !== '') {
+                    $simpleQrCode = $generatedSimpleQr;
+                }
             }
             $isWireguardFamily = in_array($protocolSlug, ['amnezia-wg-advanced', 'wireguard-standard', 'amnezia-wg', 'awg2'], true);
             if ($protocol && ($protocol['output_template'] ?? '') !== '') {
@@ -1590,7 +1597,12 @@ Router::get('/clients/{id}', function ($params) {
                 }
                 try {
                     require_once __DIR__ . '/../inc/QrUtil.php';
-                    $rawWireguardQrCode = QrUtil::pngBase64($rawWireguardConfig, 300, 1, 'WireGuard config');
+                    $rawWireguardQrCode = QrUtil::pngBase64(
+                        $rawWireguardConfig,
+                        QrUtil::DEFAULT_SIZE,
+                        QrUtil::DEFAULT_MARGIN,
+                        'WireGuard config'
+                    );
                 } catch (Throwable $e) {
                     $rawWireguardQrCode = '';
                 }
@@ -1600,6 +1612,7 @@ Router::get('/clients/{id}', function ($params) {
         }
         View::render('clients/view.twig', [
             'client' => $clientData,
+            'simple_qr_code' => $simpleQrCode,
             'protocol_output' => $protocolOutput,
             'qr_code_vpn_url' => $qrCodeVpnUrl,
             'vpn_url_config' => $vpnUrlConfig,
