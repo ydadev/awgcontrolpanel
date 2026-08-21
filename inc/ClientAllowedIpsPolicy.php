@@ -22,6 +22,9 @@ final class ClientAllowedIpsPolicy
         '172.16.0.0/12',
         '192.168.0.0/16',
         '224.0.0.0/4',
+    ];
+
+    private const LEGACY_PUBLIC_EXCLUSIONS = [
         '78.138.138.156/30',
         '91.245.39.232/29',
         '178.205.241.240/29',
@@ -125,10 +128,10 @@ final class ClientAllowedIpsPolicy
                 $stored = json_decode((string) $value, true);
                 if (is_array($stored)) {
                     $storedText = (string) ($stored['allowed_ips_text'] ?? $settings['allowed_ips_text']);
-                    if (
-                        (int) ($stored['endpoint_policy_version'] ?? 1) < 2
-                        && trim($storedText) === trim(self::legacyDefaultAllowedIpsText())
-                    ) {
+                    if (self::shouldMigrateDefaultText(
+                        $storedText,
+                        (int) ($stored['endpoint_policy_version'] ?? 1)
+                    )) {
                         $storedText = self::defaultAllowedIpsText();
                     }
                     $settings['allowed_ips_text'] = $storedText;
@@ -172,7 +175,7 @@ final class ClientAllowedIpsPolicy
         $stored = [
             'allowed_ips_text' => $text,
             'server_ids' => $validServerIds,
-            'endpoint_policy_version' => 2,
+            'endpoint_policy_version' => 3,
         ];
         self::saveRaw($stored);
         self::$cachedSettings = [
@@ -211,12 +214,24 @@ final class ClientAllowedIpsPolicy
         return implode("\n", array_merge(self::buildIpv4Complement(), self::IPV6_ALLOWED));
     }
 
-    private static function legacyDefaultAllowedIpsText(): string
+    private static function shouldMigrateDefaultText(string $storedText, int $version): bool
     {
-        return implode("\n", array_merge(
-            self::buildIpv4Complement(array_merge(self::IPV4_EXCLUSIONS, self::LEGACY_SERVER_ENDPOINTS)),
-            self::IPV6_ALLOWED
-        ));
+        if ($version >= 3) {
+            return false;
+        }
+
+        $previousDefaults = [
+            array_merge(self::IPV4_EXCLUSIONS, self::LEGACY_PUBLIC_EXCLUSIONS),
+            array_merge(self::IPV4_EXCLUSIONS, self::LEGACY_PUBLIC_EXCLUSIONS, self::LEGACY_SERVER_ENDPOINTS),
+        ];
+        foreach ($previousDefaults as $exclusions) {
+            $defaultText = implode("\n", array_merge(self::buildIpv4Complement($exclusions), self::IPV6_ALLOWED));
+            if (trim($storedText) === trim($defaultText)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function defaults(): array

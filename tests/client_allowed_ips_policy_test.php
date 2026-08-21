@@ -22,11 +22,15 @@ $allowedIps = ClientAllowedIpsPolicy::allowedIps(ClientAllowedIpsPolicy::MODE_LO
 $entries = array_map('trim', explode(',', $allowedIps));
 $ipv4Entries = array_values(array_filter($entries, static fn(string $entry): bool => strpos($entry, ':') === false));
 
-if (count($ipv4Entries) !== 150) {
+if (count($ipv4Entries) !== 47) {
     failAllowedIpsTest('Unexpected IPv4 prefix count: ' . count($ipv4Entries));
 }
 
-foreach (['1.1.1.1', '8.8.8.8', '77.88.8.8'] as $address) {
+foreach ([
+    '1.1.1.1', '8.8.8.8', '77.88.8.8',
+    '78.138.138.156', '91.245.39.232', '178.205.241.240',
+    '178.205.139.156', '178.207.157.126',
+] as $address) {
     $matched = false;
     foreach ($ipv4Entries as $cidr) {
         if (ipv4MatchesCidr($address, $cidr)) {
