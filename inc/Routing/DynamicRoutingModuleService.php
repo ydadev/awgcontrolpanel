@@ -136,8 +136,10 @@ class DynamicRoutingModuleService
     public static function savePath(int $pathId, array $input, int $actorUserId): array
     {
         $path = self::findPath($pathId);
-        $domains = DynamicRoutingCompiler::parseDomainEntries((string) ($input['domains'] ?? ''));
-        $cidrs = DynamicRoutingCompiler::parseCidrEntries((string) ($input['cidrs'] ?? ''));
+        $domainRulesText = self::normalizeRulesText((string) ($input['domains'] ?? ''));
+        $cidrRulesText = self::normalizeRulesText((string) ($input['cidrs'] ?? ''));
+        $domains = DynamicRoutingCompiler::parseDomainEntries($domainRulesText);
+        $cidrs = DynamicRoutingCompiler::parseCidrEntries($cidrRulesText);
         $priority = max(1, min(10000, (int) ($input['priority'] ?? 100)));
         $enabled = !empty($input['enabled']) ? 1 : 0;
         $tcpMss = trim((string) ($input['tcp_mss'] ?? ''));
@@ -154,9 +156,10 @@ class DynamicRoutingModuleService
         try {
             $pdo->prepare(
                 'UPDATE routing_policy_paths
-                 SET priority = ?, tcp_mss = ?, enabled = ?
+                 SET priority = ?, tcp_mss = ?, enabled = ?,
+                     domain_rules_text = ?, cidr_rules_text = ?
                  WHERE id = ?'
-            )->execute([$priority, $tcpMss, $enabled, $pathId]);
+            )->execute([$priority, $tcpMss, $enabled, $domainRulesText, $cidrRulesText, $pathId]);
             $pdo->prepare('DELETE FROM routing_policy_rules WHERE path_id = ?')->execute([$pathId]);
             $insert = $pdo->prepare(
                 'INSERT INTO routing_policy_rules
@@ -954,8 +957,12 @@ UNIT;
                 $key = $rule['match_type'] === 'domain' ? 'domains' : 'cidrs';
                 $path[$key][] = $rule['canonical_value'];
             }
-            $path['domains_text'] = implode("\n", $path['domains']);
-            $path['cidrs_text'] = implode("\n", $path['cidrs']);
+            $path['domains_text'] = $path['domain_rules_text'] !== null
+                ? (string) $path['domain_rules_text']
+                : implode("\n", $path['domains']);
+            $path['cidrs_text'] = $path['cidr_rules_text'] !== null
+                ? (string) $path['cidr_rules_text']
+                : implode("\n", $path['cidrs']);
             $path['edit_hash'] = self::pathHashFromData($path);
         }
         unset($path);
@@ -1014,7 +1021,14 @@ UNIT;
             'tcp_mss' => $path['tcp_mss'] !== null ? (int) $path['tcp_mss'] : null,
             'domains' => array_values($path['domains'] ?? []),
             'cidrs' => array_values($path['cidrs'] ?? []),
+            'domain_rules_text' => (string) ($path['domains_text'] ?? $path['domain_rules_text'] ?? ''),
+            'cidr_rules_text' => (string) ($path['cidrs_text'] ?? $path['cidr_rules_text'] ?? ''),
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    private static function normalizeRulesText(string $text): string
+    {
+        return trim(str_replace(["\r\n", "\r"], "\n", $text));
     }
 
     private static function sourceNetworkMetadata(int $serverId): array

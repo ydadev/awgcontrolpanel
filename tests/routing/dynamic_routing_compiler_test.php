@@ -17,10 +17,18 @@ class VpnServer
 require_once __DIR__ . '/../../inc/Routing/DynamicRoutingModuleService.php';
 
 $domains = DynamicRoutingCompiler::parseDomainEntries(
-    "*.YouTube.com.\napi.youtube.com\n*.com\n*.youtube.com # duplicate"
+    "-- YouTube\n*.YouTube.com.\napi.youtube.com\n# Broad rule\n*.com\n*.youtube.com # duplicate"
 );
 if ($domains !== ['*.youtube.com', 'api.youtube.com', '*.com']) {
     fwrite(STDERR, 'Unexpected normalized domains: ' . json_encode($domains) . PHP_EOL);
+    exit(1);
+}
+
+$cidrsWithComments = DynamicRoutingCompiler::parseCidrEntries(
+    "-- Office\n192.0.2.0/24\n// Single host\n203.0.113.10/32 # note"
+);
+if ($cidrsWithComments !== ['192.0.2.0/24', '203.0.113.10/32']) {
+    fwrite(STDERR, 'Unexpected CIDRs with comments: ' . json_encode($cidrsWithComments) . PHP_EOL);
     exit(1);
 }
 

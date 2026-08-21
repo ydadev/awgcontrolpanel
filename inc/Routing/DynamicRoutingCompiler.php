@@ -21,11 +21,7 @@ class DynamicRoutingCompiler
     public static function parseDomainEntries(string $input): array
     {
         $entries = [];
-        foreach (preg_split('/[\r\n,]+/', $input, -1, PREG_SPLIT_NO_EMPTY) as $part) {
-            $part = preg_replace('/(?:\s+#.*$)|(?:^\s*#.*$)/', '', trim((string) $part));
-            if ($part === '') {
-                continue;
-            }
+        foreach (self::parseRuleParts($input) as $part) {
             $canonical = self::normalizeDomainPattern($part);
             $entries[$canonical] = $canonical;
         }
@@ -74,11 +70,7 @@ class DynamicRoutingCompiler
     public static function parseCidrEntries(string $input): array
     {
         $entries = [];
-        foreach (preg_split('/[\r\n,]+/', $input, -1, PREG_SPLIT_NO_EMPTY) as $part) {
-            $part = preg_replace('/(?:\s+#.*$)|(?:^\s*#.*$)/', '', trim((string) $part));
-            if ($part === '') {
-                continue;
-            }
+        foreach (self::parseRuleParts($input) as $part) {
             $normalized = RoutingValidator::normalizeIpv4Cidr($part);
             $entries[$normalized['canonical_cidr']] = $normalized['canonical_cidr'];
         }
@@ -304,6 +296,28 @@ class DynamicRoutingCompiler
     public static function dynamicProtectedCidrs(): array
     {
         return self::DYNAMIC_PROTECTED_CIDRS;
+    }
+
+    private static function parseRuleParts(string $input): array
+    {
+        $parts = [];
+        foreach (preg_split('/\R/', $input) as $line) {
+            $line = trim((string) $line);
+            if ($line === '' || preg_match('/^(?:#|--|\/\/)/', $line)) {
+                continue;
+            }
+            $line = trim((string) preg_replace('/\s+(?:#|--|\/\/).*$/', '', $line));
+            if ($line === '') {
+                continue;
+            }
+            foreach (explode(',', $line) as $part) {
+                $part = trim($part);
+                if ($part !== '') {
+                    $parts[] = $part;
+                }
+            }
+        }
+        return $parts;
     }
 
     private static function enabledPaths(array $paths): array
