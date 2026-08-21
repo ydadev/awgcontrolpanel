@@ -158,10 +158,12 @@
     </div>
   </div>
   
-  {% if client.qr_code %}
+  {% if simple_qr_code %}
   <div class="bg-white rounded shadow p-6 text-center">
     <h3 class="font-bold mb-4">QR Code (Simple)</h3>
-    <img src="{{ client.qr_code }}" alt="QR Code" class="mx-auto" style="max-width: 300px; width: 100%; height: auto;">
+    <button type="button" class="block mx-auto cursor-zoom-in" onclick="openQrModal(this)" title="Увеличить QR-код">
+      <img src="{{ simple_qr_code }}" alt="QR Code (Simple)" class="mx-auto" style="width: min(100%, 720px); height: auto;">
+    </button>
     <p class="text-sm text-gray-600 mt-2">Scan with Amnezia VPN app</p>
   </div>
   {% endif %}
@@ -169,7 +171,9 @@
   {% if is_awg2 and qr_code_vpn_url %}
   <div class="bg-white rounded shadow p-6 text-center mt-6">
     <h3 class="font-bold mb-4">QR Code (vpn:// URL)</h3>
-    <img src="{{ qr_code_vpn_url }}" alt="QR Code VPN URL" class="mx-auto" style="max-width: 300px; width: 100%; height: auto;">
+    <button type="button" class="block mx-auto cursor-zoom-in" onclick="openQrModal(this)" title="Увеличить QR-код">
+      <img src="{{ qr_code_vpn_url }}" alt="QR Code (vpn:// URL)" class="mx-auto" style="width: min(100%, 720px); height: auto;">
+    </button>
     <p class="text-sm text-gray-600 mt-2">Scan with Amnezia VPN app</p>
   </div>
   {% endif %}
@@ -187,7 +191,9 @@
   {% if raw_wireguard_qr_code %}
   <div class="bg-white rounded shadow p-6 text-center mt-6">
     <h3 class="font-bold mb-4">QR Code ({{ raw_wireguard_title }})</h3>
-    <img src="{{ raw_wireguard_qr_code }}" alt="{{ raw_wireguard_title }} QR Code" class="mx-auto" style="max-width: 300px; width: 100%; height: auto;">
+    <button type="button" class="block mx-auto cursor-zoom-in" onclick="openQrModal(this)" title="Увеличить QR-код">
+      <img src="{{ raw_wireguard_qr_code }}" alt="{{ raw_wireguard_title }} QR Code" class="mx-auto" style="width: min(100%, 720px); height: auto;">
+    </button>
     <p class="text-sm text-gray-600 mt-2">{{ raw_wireguard_hint }}</p>
   </div>
   {% elseif client.allowed_ips_mode == 'local_bypass' and is_wireguard_family %}
@@ -211,7 +217,39 @@
   {% endif %}
 </div>
 
+<div id="qrModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-80 p-4" role="dialog" aria-modal="true" aria-label="Увеличенный QR-код" onclick="closeQrModal(event)">
+  <button type="button" class="absolute right-5 top-5 text-white text-3xl" onclick="closeQrModal()" title="Закрыть" aria-label="Закрыть">
+    <i class="fas fa-times"></i>
+  </button>
+  <img id="qrModalImage" src="" alt="" class="bg-white" style="width: min(92vw, 1200px); max-height: 92vh; object-fit: contain;">
+</div>
+
 <script>
+function openQrModal(button) {
+  const source = button.querySelector('img');
+  const modal = document.getElementById('qrModal');
+  const image = document.getElementById('qrModalImage');
+  if (!source || !modal || !image) return;
+  image.src = source.src;
+  image.alt = source.alt;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeQrModal(event) {
+  const modal = document.getElementById('qrModal');
+  if (!modal || (event && event.target !== modal)) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  document.getElementById('qrModalImage').src = '';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') closeQrModal();
+});
+
 function toggleExpirationEdit() {
   const select = document.getElementById('expirationSelect');
   const input = document.getElementById('expirationSeconds');
