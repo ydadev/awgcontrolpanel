@@ -81,33 +81,7 @@ final class ClientAllowedIpsPolicy
 
     public static function allowedIpsForEndpoint(string $mode, string $endpoint): string
     {
-        $allowedIps = self::allowedIps($mode);
-        if (self::normalizeMode($mode) !== self::MODE_LOCAL_BYPASS) {
-            return $allowedIps;
-        }
-
-        $packed = @inet_pton(trim($endpoint));
-        if ($packed === false || strlen($packed) !== 4) {
-            return $allowedIps;
-        }
-
-        $excluded = ['start' => unpack('N', $packed)[1], 'prefix' => 32];
-        $entries = [];
-        foreach (array_map('trim', explode(',', $allowedIps)) as $entry) {
-            if ($entry === '' || strpos($entry, ':') !== false) {
-                if ($entry !== '') {
-                    $entries[] = $entry;
-                }
-                continue;
-            }
-
-            $network = self::parseIpv4Cidr($entry);
-            foreach (self::excludeNetwork($network, $excluded) as $remaining) {
-                $entries[] = long2ip($remaining['start']) . '/' . $remaining['prefix'];
-            }
-        }
-
-        return implode(', ', $entries);
+        return self::allowedIps($mode);
     }
 
     public static function allowedIpsForEndpointAndDns(string $mode, string $endpoint, string $dnsServers): string
