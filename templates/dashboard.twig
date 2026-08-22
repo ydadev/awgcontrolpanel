@@ -18,6 +18,25 @@
 
 {% block title %}{{ t('dashboard.title') }} - {{ app_name }}{% endblock %}
 
+{% block styles %}
+<style>
+.server-health-grid {
+    display: grid;
+    grid-template-columns: minmax(170px, 1.25fr) 120px minmax(185px, 1fr) minmax(185px, 1fr) minmax(240px, 1.35fr) 135px;
+    min-width: 1100px;
+}
+.server-health-chart {
+    position: relative;
+    width: 100%;
+    height: 48px;
+}
+.server-health-chart canvas {
+    width: 100% !important;
+    height: 48px !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="w-full max-w-none px-2 sm:px-4 lg:px-6">
     <div class="mb-8">
@@ -68,6 +87,78 @@
             </div>
         </div>
     </div>
+
+    {% if servers|length > 0 %}
+    <section class="bg-white rounded-lg shadow mb-8 overflow-hidden" aria-labelledby="serverHealthTitle">
+        <div class="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h2 class="text-xl font-bold text-gray-900" id="serverHealthTitle">
+                    <i class="fas fa-heartbeat text-red-500 mr-1"></i>
+                    Здоровье серверов
+                </h2>
+                <p class="text-xs text-gray-500 mt-1">Нагрузка за последние 24 часа</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-gray-500" id="dashboardHealthUpdated">Загрузка данных...</span>
+                <button type="button" class="text-green-700 hover:text-green-900 text-sm whitespace-nowrap" id="dashboardHealthRefresh" title="Обновить показатели">
+                    <i class="fas fa-sync-alt mr-1" aria-hidden="true"></i>Обновить
+                </button>
+            </div>
+        </div>
+        <div class="w-full overflow-x-auto">
+            <div class="server-health-grid bg-gray-50 border-b border-gray-200 px-4 sm:px-6 py-2 text-xs font-medium text-gray-500 uppercase">
+                <div>Узел</div>
+                <div>Состояние</div>
+                <div>Процессор</div>
+                <div>Оперативная память</div>
+                <div>Сеть</div>
+                <div>Диск</div>
+            </div>
+            {% for server in servers %}
+            <div class="server-health-grid px-4 sm:px-6 py-3 border-b border-gray-100 last:border-b-0 items-center" data-dashboard-server-health="{{ server.id }}" data-server-active="{{ server.status == 'active' ? '1' : '0' }}">
+                <div class="pr-4 min-w-0">
+                    <a href="/servers/{{ server.id }}" class="block font-semibold text-gray-900 hover:text-green-700 truncate" title="{{ server.name }}">{{ server.name }}</a>
+                    <span class="block text-xs text-gray-500 truncate" title="{{ server.host }}">{{ server.host }}</span>
+                </div>
+                <div>
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs {% if server.status == 'active' %}bg-gray-100 text-gray-600{% else %}bg-yellow-100 text-yellow-800{% endif %}" data-health-status>
+                        <span class="w-2 h-2 rounded-full {% if server.status == 'active' %}bg-gray-400{% else %}bg-yellow-500{% endif %}" data-health-dot></span>
+                        <span data-health-status-text>{{ server.status == 'active' ? 'Проверка' : server.status }}</span>
+                    </span>
+                </div>
+                <div class="pr-5">
+                    <div class="flex items-center justify-between gap-2 mb-1 text-xs">
+                        <span class="text-gray-500"><i class="fas fa-microchip text-red-500 mr-1"></i>CPU</span>
+                        <strong class="text-gray-800" data-health-value="cpu">--</strong>
+                    </div>
+                    <div class="server-health-chart"><canvas id="dashboardHealthCpu-{{ server.id }}"></canvas></div>
+                </div>
+                <div class="pr-5">
+                    <div class="flex items-center justify-between gap-2 mb-1 text-xs">
+                        <span class="text-gray-500"><i class="fas fa-memory text-yellow-500 mr-1"></i>RAM</span>
+                        <strong class="text-gray-800" data-health-value="ram">--</strong>
+                    </div>
+                    <div class="server-health-chart"><canvas id="dashboardHealthRam-{{ server.id }}"></canvas></div>
+                </div>
+                <div class="pr-5">
+                    <div class="flex items-center justify-between gap-2 mb-1 text-xs">
+                        <span class="text-gray-500"><i class="fas fa-network-wired text-green-600 mr-1"></i>Сеть</span>
+                        <strong class="text-gray-800 font-mono" data-health-value="network">--</strong>
+                    </div>
+                    <div class="server-health-chart"><canvas id="dashboardHealthNetwork-{{ server.id }}"></canvas></div>
+                </div>
+                <div class="pl-2">
+                    <div class="flex items-center gap-2 text-sm text-gray-800">
+                        <i class="fas fa-hdd text-cyan-600"></i>
+                        <strong data-health-value="disk">--</strong>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1" data-health-disk-detail>Нет данных</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     {% if connection_form.owners|length > 0 %}
     <div class="bg-white rounded-lg shadow mb-8 overflow-hidden">
@@ -358,6 +449,133 @@
 
 {% block scripts %}
 <script>
+const dashboardServerHealthCharts = {};
+let dashboardHealthUpdateInProgress = false;
+
+function dashboardHealthNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function setDashboardHealthStatus(row, state, text) {
+    const badge = row.querySelector('[data-health-status]');
+    const dot = row.querySelector('[data-health-dot]');
+    row.querySelector('[data-health-status-text]').textContent = text;
+    badge.className = `inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${state === 'ok' ? 'bg-green-100 text-green-800' : state === 'error' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`;
+    dot.className = `w-2 h-2 rounded-full ${state === 'ok' ? 'bg-green-500' : state === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`;
+}
+
+function updateDashboardHealthChart(key, canvas, labels, datasets, suggestedMax = undefined) {
+    if (!canvas) return;
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: {intersect: false, mode: 'index'},
+        plugins: {
+            legend: {display: false},
+            tooltip: {enabled: true, displayColors: false}
+        },
+        scales: {
+            x: {display: false},
+            y: {display: false, beginAtZero: true, suggestedMax}
+        }
+    };
+    if (dashboardServerHealthCharts[key]) {
+        dashboardServerHealthCharts[key].data.labels = labels;
+        dashboardServerHealthCharts[key].data.datasets = datasets;
+        dashboardServerHealthCharts[key].options.scales.y.suggestedMax = suggestedMax;
+        dashboardServerHealthCharts[key].update('none');
+        return;
+    }
+    dashboardServerHealthCharts[key] = new Chart(canvas, {type: 'line', data: {labels, datasets}, options});
+}
+
+async function updateDashboardServerHealth(row) {
+    const serverId = row.dataset.dashboardServerHealth;
+    if (row.dataset.serverActive !== '1') {
+        setDashboardHealthStatus(row, 'warning', 'Неактивен');
+        return;
+    }
+    try {
+        const response = await fetch(`/api/servers/${serverId}/metrics?hours=24&max_points=96`, {credentials: 'same-origin'});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const metrics = data.success && Array.isArray(data.metrics) ? data.metrics : [];
+        const latest = data.latest || metrics[metrics.length - 1];
+        if (!latest || metrics.length === 0) {
+            setDashboardHealthStatus(row, 'warning', 'Нет данных');
+            return;
+        }
+
+        const labels = metrics.map(metric => metric.collected_at || '');
+        const cpu = metrics.map(metric => dashboardHealthNumber(metric.cpu_percent));
+        const ram = metrics.map(metric => {
+            const total = dashboardHealthNumber(metric.ram_total_mb);
+            return total > 0 ? dashboardHealthNumber(metric.ram_used_mb) / total * 100 : 0;
+        });
+        const rx = metrics.map(metric => dashboardHealthNumber(metric.network_rx_mbps));
+        const tx = metrics.map(metric => dashboardHealthNumber(metric.network_tx_mbps));
+
+        updateDashboardHealthChart(`cpu-${serverId}`, document.getElementById(`dashboardHealthCpu-${serverId}`), labels, [
+            {label: 'CPU', data: cpu, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.10)', borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.35}
+        ], 100);
+        updateDashboardHealthChart(`ram-${serverId}`, document.getElementById(`dashboardHealthRam-${serverId}`), labels, [
+            {label: 'RAM', data: ram, borderColor: '#ca8a04', backgroundColor: 'rgba(202,138,4,0.10)', borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.35}
+        ], 100);
+        updateDashboardHealthChart(`network-${serverId}`, document.getElementById(`dashboardHealthNetwork-${serverId}`), labels, [
+            {label: 'Приём', data: rx, borderColor: '#16a34a', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.35},
+            {label: 'Отправка', data: tx, borderColor: '#2563eb', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.35}
+        ]);
+
+        const ramTotal = dashboardHealthNumber(latest.ram_total_mb);
+        const ramPercent = ramTotal > 0 ? dashboardHealthNumber(latest.ram_used_mb) / ramTotal * 100 : 0;
+        const diskTotal = dashboardHealthNumber(latest.disk_total_gb);
+        const diskUsed = dashboardHealthNumber(latest.disk_used_gb);
+        const diskPercent = diskTotal > 0 ? diskUsed / diskTotal * 100 : 0;
+        row.querySelector('[data-health-value="cpu"]').textContent = `${dashboardHealthNumber(latest.cpu_percent).toFixed(1)}%`;
+        row.querySelector('[data-health-value="ram"]').textContent = `${ramPercent.toFixed(0)}%`;
+        row.querySelector('[data-health-value="network"]').textContent = `↓${dashboardHealthNumber(latest.network_rx_mbps).toFixed(1)} ↑${dashboardHealthNumber(latest.network_tx_mbps).toFixed(1)}`;
+        row.querySelector('[data-health-value="disk"]').textContent = `${diskPercent.toFixed(0)}%`;
+        row.querySelector('[data-health-disk-detail]').textContent = diskTotal > 0 ? `${diskUsed.toFixed(1)} из ${diskTotal.toFixed(1)} GB` : 'Нет данных';
+        const ageSeconds = dashboardHealthNumber(latest.age_seconds);
+        const highLoad = dashboardHealthNumber(latest.cpu_percent) >= 95 || ramPercent >= 90 || diskPercent >= 90;
+        if (ageSeconds > 600) {
+            setDashboardHealthStatus(row, 'warning', 'Данные устарели');
+        } else if (highLoad) {
+            setDashboardHealthStatus(row, 'warning', 'Высокая нагрузка');
+        } else {
+            setDashboardHealthStatus(row, 'ok', 'В норме');
+        }
+    } catch (error) {
+        setDashboardHealthStatus(row, 'error', 'Недоступен');
+        console.error(`Failed to fetch dashboard health for server ${serverId}:`, error);
+    }
+}
+
+async function updateDashboardServerHealthAll() {
+    if (dashboardHealthUpdateInProgress) return;
+    dashboardHealthUpdateInProgress = true;
+    const rows = Array.from(document.querySelectorAll('[data-dashboard-server-health]'));
+    const refreshIcon = document.querySelector('#dashboardHealthRefresh i');
+    if (refreshIcon) refreshIcon.classList.add('fa-spin');
+    try {
+        await Promise.all(rows.map(updateDashboardServerHealth));
+        const updated = document.getElementById('dashboardHealthUpdated');
+        if (updated) updated.textContent = `Обновлено: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+    } finally {
+        dashboardHealthUpdateInProgress = false;
+        if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+    }
+}
+
+const dashboardHealthRefresh = document.getElementById('dashboardHealthRefresh');
+if (dashboardHealthRefresh) {
+    dashboardHealthRefresh.addEventListener('click', updateDashboardServerHealthAll);
+    updateDashboardServerHealthAll();
+    setInterval(updateDashboardServerHealthAll, 60000);
+}
+
 const dashboardConnectionForm = document.getElementById('dashboardCreateConnectionForm');
 if (dashboardConnectionForm) {
     const dashboardConnectionOwners = JSON.parse(document.getElementById('dashboardConnectionOptions').textContent || '[]');

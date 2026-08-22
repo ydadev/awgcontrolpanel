@@ -2854,7 +2854,7 @@ Router::get('/api/servers/{id}/metrics', function ($params) {
     }
 
     $serverId = (int) $params['id'];
-    $hours = isset($_GET['hours']) ? (float) $_GET['hours'] : 24;
+    $hours = isset($_GET['hours']) ? max(1, min(168, (int) $_GET['hours'])) : 24;
 
     try {
         $server = new VpnServer($serverId);
@@ -2866,9 +2866,13 @@ Router::get('/api/servers/{id}/metrics', function ($params) {
             return;
         }
 
-        $metrics = ServerMonitoring::getServerMetrics($serverId, $hours);
+        $maxPoints = isset($_GET['max_points']) ? (int) $_GET['max_points'] : 0;
+        $metrics = $maxPoints > 0
+            ? ServerMonitoring::getServerChartMetrics($serverId, $hours, $maxPoints)
+            : ServerMonitoring::getServerMetrics($serverId, $hours);
+        $latest = $maxPoints > 0 ? ServerMonitoring::getLatestServerMetrics($serverId) : null;
 
-        echo json_encode(['success' => true, 'metrics' => $metrics]);
+        echo json_encode(['success' => true, 'metrics' => $metrics, 'latest' => $latest]);
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);

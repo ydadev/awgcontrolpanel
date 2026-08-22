@@ -595,6 +595,50 @@ class ServerMonitoring
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    public static function getServerChartMetrics(int $serverId, int $hours = 24, int $maxPoints = 96): array
+    {
+        $db = DB::conn();
+        $hours = max(1, min(168, $hours));
+        $maxPoints = max(24, min(240, $maxPoints));
+        $bucketSeconds = max(1, (int) ceil(($hours * 3600) / ($maxPoints - 2)));
+
+        $stmt = $db->prepare('
+            SELECT AVG(cpu_percent) AS cpu_percent,
+                   AVG(ram_used_mb) AS ram_used_mb,
+                   MAX(ram_total_mb) AS ram_total_mb,
+                   AVG(disk_used_gb) AS disk_used_gb,
+                   MAX(disk_total_gb) AS disk_total_gb,
+                   AVG(network_rx_mbps) AS network_rx_mbps,
+                   AVG(network_tx_mbps) AS network_tx_mbps,
+                   MAX(collected_at) AS collected_at
+            FROM server_metrics
+            WHERE server_id = ?
+              AND collected_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+            GROUP BY FLOOR(UNIX_TIMESTAMP(collected_at) / ?)
+            ORDER BY collected_at ASC
+        ');
+        $stmt->execute([$serverId, $hours, $bucketSeconds]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public static function getLatestServerMetrics(int $serverId): ?array
+    {
+        $stmt = DB::conn()->prepare('
+            SELECT cpu_percent, ram_used_mb, ram_total_mb,
+                   disk_used_gb, disk_total_gb,
+                   network_rx_mbps, network_tx_mbps, collected_at,
+                   GREATEST(0, TIMESTAMPDIFF(SECOND, collected_at, NOW())) AS age_seconds
+            FROM server_metrics
+            WHERE server_id = ?
+            ORDER BY collected_at DESC
+            LIMIT 1
+        ');
+        $stmt->execute([$serverId]);
+        $latest = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $latest ?: null;
+    }
+
     /**
      * Get client metrics for last 24 hours
      */
