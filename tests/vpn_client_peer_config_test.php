@@ -95,7 +95,7 @@ if (str_contains($splitConfig, 'AllowedIPs = 0.0.0.0/0, ::/0')) {
     fwrite(STDERR, "Local-bypass mode retained the full-tunnel AllowedIPs\n");
     exit(1);
 }
-foreach (['10.0.0.0/8', '192.168.0.0/16', '194.87.69.189/32'] as $excludedCidr) {
+foreach (['10.0.0.0/8', '192.168.0.0/16'] as $excludedCidr) {
     if (str_contains($splitConfig, $excludedCidr)) {
         fwrite(STDERR, "Local-bypass config includes excluded CIDR {$excludedCidr}\n");
         exit(1);

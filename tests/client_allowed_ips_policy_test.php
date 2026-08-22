@@ -69,10 +69,15 @@ foreach (['91.206.92.82', '185.211.103.32', '194.87.69.189', '195.133.67.55', '1
 
 $spbAllowedIps = ClientAllowedIpsPolicy::allowedIpsForEndpoint(ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS, '194.87.69.189');
 $spbEntries = array_map('trim', explode(',', $spbAllowedIps));
+$spbEndpointMatched = false;
 foreach ($spbEntries as $cidr) {
     if (strpos($cidr, ':') === false && ipv4MatchesCidr('194.87.69.189', $cidr)) {
-        failAllowedIpsTest('Current server endpoint is still tunneled via ' . $cidr);
+        $spbEndpointMatched = true;
+        break;
     }
+}
+if (!$spbEndpointMatched) {
+    failAllowedIpsTest('Current server endpoint is absent from AllowedIPs');
 }
 $fraMatched = false;
 foreach ($spbEntries as $cidr) {
@@ -93,8 +98,15 @@ $withInternalDns = ClientAllowedIpsPolicy::allowedIpsForEndpointAndDns(
 if (!str_contains($withInternalDns, '10.254.0.53/32')) {
     failAllowedIpsTest('Internal DNS host route was not added to local-bypass AllowedIPs');
 }
-if (str_contains($withInternalDns, '203.0.113.10/32')) {
-    failAllowedIpsTest('Endpoint exclusion was undone while adding the internal DNS route');
+$testEndpointMatched = false;
+foreach (array_map('trim', explode(',', $withInternalDns)) as $cidr) {
+    if (strpos($cidr, ':') === false && ipv4MatchesCidr('203.0.113.10', $cidr)) {
+        $testEndpointMatched = true;
+        break;
+    }
+}
+if (!$testEndpointMatched) {
+    failAllowedIpsTest('Endpoint is absent after adding the internal DNS route');
 }
 
 $withPublicDns = ClientAllowedIpsPolicy::allowedIpsForEndpointAndDns(
