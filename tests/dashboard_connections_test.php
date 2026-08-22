@@ -62,7 +62,7 @@ foreach (['$sortColumns', "['20', '50', 'all']", 'array_key_exists($sort, $sortC
         failDashboardConnectionsTest('Dashboard query validation omits: ' . $required);
     }
 }
-foreach (['dashboardConnectionFormData($user)', "'connection_form' => \$connectionForm", "(string) (\$_POST['return_to'] ?? '') === '/dashboard'", "Csrf::validate(\$_POST['csrf_token'] ?? null)", 'userCanCreateClients($user, $serverId)', 'resolveConnectionOwnerForCreate($user, $serverId)', 'Selected protocol is not installed on this server'] as $required) {
+foreach (['dashboardConnectionFormData($user)', "'connection_form' => \$connectionForm", "(string) (\$_POST['return_to'] ?? '') === '/dashboard'", 'requireValidCsrfToken()', 'userCanCreateClients($user, $serverId)', 'resolveConnectionOwnerForCreate($user, $serverId)', 'Selected protocol is not installed on this server'] as $required) {
     if (!str_contains($routeSource, $required)) {
         failDashboardConnectionsTest('Dashboard connection creation route omits: ' . $required);
     }

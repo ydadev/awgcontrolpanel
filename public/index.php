@@ -325,6 +325,21 @@ function userCanAccessClient(array $user, array $clientData): bool
     return UserServerAccess::canViewServer((int) $user['id'], (int) ($clientData['server_id'] ?? 0));
 }
 
+function userCanMutateClient(array $user, array $clientData): bool
+{
+    return userCanAccessClient($user, $clientData);
+}
+
+function requireValidCsrfToken(): bool
+{
+    if (Csrf::validate($_POST['csrf_token'] ?? null)) {
+        return true;
+    }
+    http_response_code(403);
+    echo 'Forbidden: invalid CSRF token';
+    return false;
+}
+
 function debugRoutesEnabled(): bool
 {
     $val = strtolower((string) (getenv('ENABLE_DEBUG_ROUTES') ?: ''));
@@ -1421,9 +1436,7 @@ Router::post('/servers/{id}/delete', function ($params) {
 Router::post('/servers/{id}/clients/create', function ($params) {
     requireAuth();
     $serverId = (int) $params['id'];
-    if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(403);
-        echo 'Forbidden: invalid CSRF token';
+    if (!requireValidCsrfToken()) {
         return;
     }
     $clientName = (string) ($_POST['name'] ?? '');
@@ -1958,6 +1971,9 @@ Router::get('/debug/awg-smoke', function () {
 // Revoke client access
 Router::post('/clients/{id}/revoke', function ($params) {
     requireAuth();
+    if (!requireValidCsrfToken()) {
+        return;
+    }
     $clientId = (int) $params['id'];
 
     try {
@@ -1965,7 +1981,7 @@ Router::post('/clients/{id}/revoke', function ($params) {
         $clientData = $client->getData();
 
         $user = Auth::user();
-        if (!userCanAccessClient($user, $clientData)) {
+        if (!userCanMutateClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -1984,6 +2000,9 @@ Router::post('/clients/{id}/revoke', function ($params) {
 // Restore client access
 Router::post('/clients/{id}/restore', function ($params) {
     requireAuth();
+    if (!requireValidCsrfToken()) {
+        return;
+    }
     $clientId = (int) $params['id'];
 
     try {
@@ -1991,7 +2010,7 @@ Router::post('/clients/{id}/restore', function ($params) {
         $clientData = $client->getData();
 
         $user = Auth::user();
-        if (!userCanAccessClient($user, $clientData)) {
+        if (!userCanMutateClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -2010,6 +2029,9 @@ Router::post('/clients/{id}/restore', function ($params) {
 // Delete client
 Router::post('/clients/{id}/delete', function ($params) {
     requireAuth();
+    if (!requireValidCsrfToken()) {
+        return;
+    }
     $clientId = (int) $params['id'];
 
     try {
@@ -2017,7 +2039,7 @@ Router::post('/clients/{id}/delete', function ($params) {
         $clientData = $client->getData();
 
         $user = Auth::user();
-        if (!userCanAccessClient($user, $clientData)) {
+        if (!userCanMutateClient($user, $clientData)) {
             http_response_code(403);
             echo 'Forbidden';
             return;
@@ -2726,7 +2748,7 @@ Router::post('/api/clients/{id}/revoke', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        if (!userCanAccessClient($user, $clientData)) {
+        if (!userCanMutateClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2758,7 +2780,7 @@ Router::post('/api/clients/{id}/restore', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        if (!userCanAccessClient($user, $clientData)) {
+        if (!userCanMutateClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;
@@ -2790,7 +2812,7 @@ Router::delete('/api/clients/{id}/delete', function ($params) {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
 
-        if (!userCanAccessClient($user, $clientData)) {
+        if (!userCanMutateClient($user, $clientData)) {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;

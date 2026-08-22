@@ -496,14 +496,17 @@
             <a href="/clients/{{ client.id }}" class="text-purple-600 hover:text-purple-800 mr-2">Открыть</a>
             {% if client.status == 'active' %}
               <form method="POST" action="/clients/{{ client.id }}/revoke" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="button" class="text-orange-600 hover:text-orange-800 mr-2" onclick="confirmAction(this, 'Отключить это подключение?')">Отключить</button>
               </form>
             {% else %}
               <form method="POST" action="/clients/{{ client.id }}/restore" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="text-green-600 hover:text-green-800 mr-2">Включить</button>
               </form>
             {% endif %}
             <form method="POST" action="/clients/{{ client.id }}/delete" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="button" class="text-red-600 hover:text-red-800" onclick="confirmAction(this, 'Удалить это подключение?')">Удалить</button>
             </form>
           </td>

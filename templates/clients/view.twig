@@ -35,23 +35,31 @@
         </div>
         <div><dt class="text-sm text-gray-600">{{ t('common.created') }}</dt><dd>{{ client.created_at }}</dd></div>
       </dl>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <a href="/clients/{{ client.id }}/download" class="gradient-bg text-white px-4 py-2 rounded">
           <i class="fas fa-download"></i> Скачать конфиг
         </a>
         {% if client.status == 'active' %}
           <form method="POST" action="/clients/{{ client.id }}/revoke" style="display:inline;">
-            <button type="submit" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded" onclick="return confirm('Отключить это подключение?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="button" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded" onclick="submitClientAction(this, 'Отключить это подключение?', 'Отключение подключения')">
               <i class="fas fa-ban"></i> Отключить
             </button>
           </form>
         {% else %}
           <form method="POST" action="/clients/{{ client.id }}/restore" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
               <i class="fas fa-check"></i> Включить
             </button>
           </form>
         {% endif %}
+        <form method="POST" action="/clients/{{ client.id }}/delete" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="button" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded" onclick="submitClientAction(this, 'Удалить это подключение без возможности восстановления?', 'Удаление подключения')">
+            <i class="fas fa-trash"></i> Удалить
+          </button>
+        </form>
       </div>
     </div>
     
@@ -225,6 +233,12 @@
 </div>
 
 <script>
+async function submitClientAction(button, message, title) {
+  if (await showConfirmModal(message, title)) {
+    button.closest('form').submit();
+  }
+}
+
 function openQrModal(button) {
   const source = button.querySelector('img');
   const modal = document.getElementById('qrModal');
