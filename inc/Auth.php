@@ -31,9 +31,15 @@ class Auth {
       return null;
     }
     
-    // Try LDAP authentication first if enabled
-    $ldap = new LdapSync();
-    if ($ldap->isEnabled()) {
+    // Standalone legacy entry points default to the historical enabled behavior.
+    // The web/worker boot path always initializes the module registry first.
+    $ldapModuleEnabled = !class_exists('FeatureModuleRegistry')
+      || !FeatureModuleRegistry::isBooted()
+      || FeatureModuleRegistry::isEnabled('ldap');
+
+    // Try LDAP authentication only while its complete feature module is enabled.
+    $ldap = $ldapModuleEnabled ? new LdapSync() : null;
+    if ($ldap !== null && $ldap->isEnabled()) {
       $ldapUser = $ldap->authenticate($email, $password);
       if ($ldapUser) {
         // LDAP auth successful - sync/create user in local DB

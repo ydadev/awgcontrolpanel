@@ -8,9 +8,17 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../inc/Config.php';
 require_once __DIR__ . '/../inc/DB.php';
+require_once __DIR__ . '/../inc/Modules/FeatureModuleRegistry.php';
+require_once __DIR__ . '/../inc/Security/SecretStore.php';
 require_once __DIR__ . '/../inc/LdapSync.php';
 
 try {
+    Config::load(__DIR__ . '/../.env');
+    FeatureModuleRegistry::boot(__DIR__ . '/../modules');
+    if (!FeatureModuleRegistry::isEnabled('ldap')) {
+        exit(0);
+    }
+
     $ldap = new LdapSync();
     
     if (!$ldap->isEnabled()) {

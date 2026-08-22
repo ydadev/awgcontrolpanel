@@ -99,7 +99,7 @@
                             <i class="fas fa-users mr-2"></i>Пользователи
                         </a>
                         {% endif %}
-                        {% if user.role == 'admin' %}
+                        {% if user.role == 'admin' and modules.routing.enabled %}
                         <a href="/routing" class="text-white hover:text-gray-200 inline-flex items-center whitespace-nowrap px-1 pt-1 text-sm font-medium">
                             <i class="fas fa-route mr-2"></i>Маршруты
                         </a>
@@ -173,7 +173,7 @@
                     <i class="fas fa-users mr-2"></i>Пользователи
                 </a>
                 {% endif %}
-                {% if user.role == 'admin' %}
+                {% if user.role == 'admin' and modules.routing.enabled %}
                 <a href="/routing" class="text-white hover:bg-purple-700 block px-3 py-2 rounded-md text-base font-medium">
                     <i class="fas fa-route mr-2"></i>Маршруты
                 </a>

@@ -10,35 +10,61 @@ class SettingsController {
     }
     
     public function index() {
-        $stats = $this->getTranslationStats();
-        $apiKey = $this->getApiKey('openrouter');
+        $user = Auth::user();
+        $isAdmin = (($user['role'] ?? '') === 'admin');
+        $stats = [];
+        $apiKeyConfigured = false;
         $branding = Branding::get(Config::get('APP_NAME', 'AWG Control Panel'));
-        $twoFactorSettings = EmailTwoFactorSettings::forForm();
-        $clientAllowedIpsSettings = ClientAllowedIpsPolicy::get();
+        $twoFactorSettings = [];
+        $clientAllowedIpsSettings = [];
+        $clientAllowedIpsServers = [];
 
-        // LDAP data for embedded tab
-        $stmt = $this->pdo->query("SELECT * FROM ldap_configs WHERE id = 1");
-        $config = $stmt->fetch() ?: [];
-        $stmt = $this->pdo->query("SELECT * FROM ldap_group_mappings ORDER BY ldap_group");
-        $mappings = $stmt->fetchAll();
+        $config = [];
+        $mappings = [];
+        $ldapHasBindPassword = false;
+        $ldapModuleEnabled = !class_exists('FeatureModuleRegistry')
+            || !FeatureModuleRegistry::isBooted()
+            || FeatureModuleRegistry::isEnabled('ldap');
 
-        // Protocols data for embedded tab (new management)
-        $protocols = ProtocolService::getAllProtocolsWithStats();
-        $selectedId = isset($_GET['id']) ? (int)$_GET['id'] : null;
-        $isNew = isset($_GET['new']);
+        $protocols = [];
+        $isNew = false;
         $editing = null;
-        if (!$isNew) {
-            if ($selectedId) {
-                try {
-                    $editing = ProtocolService::getProtocolWithDetails($selectedId);
-                } catch (Exception $e) {
-                    $editing = null;
-                }
+
+        if ($isAdmin) {
+            $stats = $this->getTranslationStats();
+            $apiKeyConfigured = $this->hasApiKey('openrouter');
+            $twoFactorSettings = EmailTwoFactorSettings::forForm();
+            $clientAllowedIpsSettings = ClientAllowedIpsPolicy::get();
+            $clientAllowedIpsServers = VpnServer::listAll();
+
+            if ($ldapModuleEnabled) {
+                // LDAP data for the embedded admin tab. Never pass the bind
+                // password back into an HTML response.
+                $stmt = $this->pdo->query("SELECT * FROM ldap_configs WHERE id = 1");
+                $config = $stmt->fetch() ?: [];
+                $ldapHasBindPassword = !empty($config['bind_password']);
+                unset($config['bind_password']);
+                $stmt = $this->pdo->query("SELECT * FROM ldap_group_mappings ORDER BY ldap_group");
+                $mappings = $stmt->fetchAll();
             }
-            if (!$editing && !empty($protocols)) {
-                $firstId = (int)($protocols[0]['id'] ?? 0);
-                if ($firstId) {
-                    try { $editing = ProtocolService::getProtocolWithDetails($firstId); } catch (Exception $e) { $editing = null; }
+
+            // Protocols data for the embedded admin tab.
+            $protocols = ProtocolService::getAllProtocolsWithStats();
+            $selectedId = isset($_GET['id']) ? (int)$_GET['id'] : null;
+            $isNew = isset($_GET['new']);
+            if (!$isNew) {
+                if ($selectedId) {
+                    try {
+                        $editing = ProtocolService::getProtocolWithDetails($selectedId);
+                    } catch (Exception $e) {
+                        $editing = null;
+                    }
+                }
+                if (!$editing && !empty($protocols)) {
+                    $firstId = (int)($protocols[0]['id'] ?? 0);
+                    if ($firstId) {
+                        try { $editing = ProtocolService::getProtocolWithDetails($firstId); } catch (Exception $e) { $editing = null; }
+                    }
                 }
             }
         }
@@ -46,15 +72,16 @@ class SettingsController {
 
         $data = [
             'translation_stats' => $stats,
-            'openrouter_key' => $apiKey,
+            'openrouter_key_configured' => $apiKeyConfigured,
             'branding' => $branding,
             'two_factor_settings' => $twoFactorSettings,
-            'two_factor_test_recipient' => Auth::user()['email'] ?? '',
+            'two_factor_test_recipient' => $user['email'] ?? '',
             'client_allowed_ips_settings' => $clientAllowedIpsSettings,
-            'client_allowed_ips_servers' => VpnServer::listAll(),
+            'client_allowed_ips_servers' => $clientAllowedIpsServers,
             // LDAP
             'config' => $config,
             'mappings' => $mappings,
+            'ldap_has_bind_password' => $ldapHasBindPassword,
             // Protocols
             'protocols' => $protocols,
             'editing' => $editing,
@@ -249,6 +276,59 @@ class SettingsController {
         $stmt->execute([$name, $email, $passwordHash, $role, $status]);
         
         $_SESSION['settings_success'] = 'User added successfully';
+        header('Location: /users');
+        exit;
+    }
+
+    public function changeUserName($userId) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /users');
+            exit;
+        }
+
+        $user = Auth::user();
+        if (!Auth::canManageUsers($user)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+        if (!$this->validateUserManagementCsrf()) {
+            return;
+        }
+
+        $userId = (int)$userId;
+        $name = trim((string)($_POST['name'] ?? ''));
+        $nameLength = function_exists('mb_strlen') ? mb_strlen($name, 'UTF-8') : strlen($name);
+
+        if ($userId <= 0 || $name === '') {
+            $_SESSION['settings_error'] = 'User name is required';
+            header('Location: /users');
+            exit;
+        }
+        if ($nameLength > 255) {
+            $_SESSION['settings_error'] = 'User name must not exceed 255 characters';
+            header('Location: /users');
+            exit;
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $target = $stmt->fetch();
+        if (!$target) {
+            $_SESSION['settings_error'] = 'User not found';
+            header('Location: /users');
+            exit;
+        }
+        if (!Auth::canManageUser($target, $user)) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+
+        $stmt = $this->pdo->prepare('UPDATE users SET name = ? WHERE id = ?');
+        $stmt->execute([$name, $userId]);
+
+        $_SESSION['settings_success'] = 'User name updated for ' . $target['email'];
         header('Location: /users');
         exit;
     }
@@ -621,11 +701,10 @@ class SettingsController {
         return $stmt->fetchAll();
     }
     
-    private function getApiKey($service) {
-        $stmt = $this->pdo->prepare("SELECT api_key FROM api_keys WHERE service_name = ? AND is_active = 1");
+    private function hasApiKey($service): bool {
+        $stmt = $this->pdo->prepare("SELECT 1 FROM api_keys WHERE service_name = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$service]);
-        $result = $stmt->fetch();
-        return $result ? $result['api_key'] : null;
+        return (bool) $stmt->fetchColumn();
     }
     
     public function saveApiKey() {
@@ -659,7 +738,7 @@ class SettingsController {
                 View::render('settings.twig', [
                     'error' => $errorMsg,
                     'translation_stats' => $this->getTranslationStats(),
-                    'openrouter_key' => ''
+                    'openrouter_key_configured' => $this->hasApiKey('openrouter')
                 ]);
                 return;
             }
@@ -797,6 +876,8 @@ class SettingsController {
         // Get LDAP configuration
         $stmt = $this->pdo->query("SELECT * FROM ldap_configs WHERE id = 1");
         $config = $stmt->fetch() ?: [];
+        $ldapHasBindPassword = !empty($config['bind_password']);
+        unset($config['bind_password']);
         
         // Get group mappings
         $stmt = $this->pdo->query("SELECT * FROM ldap_group_mappings ORDER BY ldap_group");
@@ -804,7 +885,8 @@ class SettingsController {
         
         $data = [
             'config' => $config,
-            'mappings' => $mappings
+            'mappings' => $mappings,
+            'ldap_has_bind_password' => $ldapHasBindPassword,
         ];
         
         // Check for session messages
@@ -839,7 +921,16 @@ class SettingsController {
         $useTls = isset($_POST['use_tls']) ? 1 : 0;
         $baseDn = trim($_POST['base_dn'] ?? '');
         $bindDn = trim($_POST['bind_dn'] ?? '');
-        $bindPassword = $_POST['bind_password'] ?? '';
+        $bindPasswordInput = (string) ($_POST['bind_password'] ?? '');
+        if ($bindPasswordInput === '') {
+            $stmt = $this->pdo->query("SELECT bind_password FROM ldap_configs WHERE id = 1");
+            $storedBindPassword = (string) ($stmt->fetchColumn() ?: '');
+            $bindPassword = $storedBindPassword === ''
+                ? ''
+                : SecretStore::rewrap($storedBindPassword, 'ldap:bind_password');
+        } else {
+            $bindPassword = SecretStore::encrypt($bindPasswordInput, 'ldap:bind_password');
+        }
         $userSearchFilter = trim($_POST['user_search_filter'] ?? '(uid=%s)');
         $groupSearchFilter = trim($_POST['group_search_filter'] ?? '(memberUid=%s)');
         $syncInterval = intval($_POST['sync_interval'] ?? 30);

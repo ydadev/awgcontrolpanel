@@ -215,6 +215,17 @@
                         <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{{ u.created_at|date('Y-m-d') }}</td>
                         <td class="px-6 py-4 text-sm min-w-52">
                             {% if can_manage_target and u.id != user.id %}
+                            <form method="POST" action="/users/{{ u.id }}/name" class="mb-3 space-y-2">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <label class="block text-xs font-medium text-gray-700">Имя пользователя</label>
+                                <input type="text" name="name" value="{{ u.name }}" required maxlength="255"
+                                       class="block w-48 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-purple-500 focus:border-purple-500">
+                                <button type="submit" class="text-purple-600 hover:text-purple-900 text-xs">
+                                    <i class="fas fa-save mr-1"></i>Сохранить имя
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if can_manage_target and u.id != user.id %}
                             <form method="POST" action="/users/{{ u.id }}/password" class="mb-3 space-y-2">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <label class="block text-xs font-medium text-gray-700">Задать пароль</label>

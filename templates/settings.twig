@@ -34,6 +34,7 @@
                class="tab-link border-purple-500 text-purple-600 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-user mr-2"></i>{{ t('settings.profile') }}
             </a>
+            {% if user.role == 'admin' %}
             <a href="#" onclick="showTab('api'); return false;" id="tab-api"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-key mr-2"></i>{{ t('settings.api_keys') }}
@@ -42,6 +43,7 @@
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-language mr-2"></i>{{ t('settings.translations') }}
             </a>
+            {% endif %}
             <a href="/tools/qr-decode"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-qrcode mr-2"></i>QR Декодер
@@ -59,10 +61,12 @@
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap">
                 <i class="fas fa-route mr-2"></i>AllowedIPs
             </a>
+            {% if modules.ldap.enabled %}
             <a href="#" onclick="showTab('ldap'); return false;" id="tab-ldap"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-network-wired mr-2"></i>LDAP
             </a>
+            {% endif %}
             <a href="#" onclick="showTab('protocols'); return false;" id="tab-protocols"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
                 <i class="fas fa-cubes mr-2"></i>{{ t('settings.protocol_management') }}
@@ -132,6 +136,7 @@
         </div>
     </div>
 
+    {% if user.role == 'admin' %}
     <!-- API Tab -->
     <div id="content-api" class="tab-content hidden">
         <div class="bg-white shadow rounded-lg">
@@ -141,7 +146,7 @@
                 </h2>
             </div>
             <div class="px-6 py-5">
-                {% if openrouter_key %}
+                {% if openrouter_key_configured %}
                 <div class="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
                     <div class="flex items-center justify-between">
                         <div>
@@ -149,7 +154,7 @@
                             <span class="text-sm font-medium text-green-900">{{ t('settings.api_key_configured') }}</span>
                         </div>
                         <code class="text-xs text-green-700 bg-green-100 px-2 py-1 rounded">
-                            {{ openrouter_key[:15] }}...{{ openrouter_key[-4:] }}
+                            ••••••••••••••••
                         </code>
                     </div>
                 </div>
@@ -165,7 +170,8 @@
                         <label class="block text-sm font-medium text-gray-700 mb-2">
                             OpenRouter API Key <span class="text-gray-500 font-normal">({{ t('settings.for_translation') }})</span>
                         </label>
-                        <input type="text" name="api_key" placeholder="sk-or-v1-..." value="{{ openrouter_key }}" 
+                        <input type="password" name="api_key" autocomplete="new-password"
+                               placeholder="{{ openrouter_key_configured ? 'Введите новый ключ для замены' : 'sk-or-v1-...' }}"
                                class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         <p class="mt-2 text-xs text-gray-500">
                             <i class="fas fa-info-circle"></i> {{ t('settings.get_key_at') }} 
@@ -179,7 +185,7 @@
                         </div>
                         <input type="hidden" name="service" value="openrouter">
                         <button type="submit" class="mt-4 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                            <i class="fas fa-save mr-2"></i>{{ openrouter_key ? t('form.update') : t('form.save') }}
+                            <i class="fas fa-save mr-2"></i>{{ openrouter_key_configured ? t('form.update') : t('form.save') }}
                         </button>
                     </div>
                 </form>
@@ -238,6 +244,7 @@
             </table>
         </div>
     </div>
+    {% endif %}
 
     <!-- Admin Tabs -->
     {% if user.role == 'admin' %}
@@ -474,6 +481,7 @@
         </div>
     </div>
 
+    {% if modules.ldap.enabled %}
     <!-- LDAP Tab -->
     <div id="content-ldap" class="tab-content hidden">
         <div class="bg-white rounded-lg shadow-md p-6 mb-6 max-w-5xl">
@@ -548,9 +556,10 @@
                         <label class="block text-sm font-medium text-gray-700 mb-1">
                             {{ t('ldap.bind_password') }} <span class="text-red-500">*</span>
                         </label>
-                        <input type="password" name="bind_password" value="{{ config.bind_password }}" required
-                               placeholder="••••••••"
-                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <input type="password" name="bind_password" autocomplete="new-password"
+                                {% if not ldap_has_bind_password %}required{% endif %}
+                                placeholder="{% if ldap_has_bind_password %}Оставьте пустым, чтобы не менять{% else %}••••••••{% endif %}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                     </div>
 
                     <div>
@@ -625,6 +634,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Protocols Tab -->
     <div id="content-protocols" class="tab-content hidden">
@@ -687,6 +697,7 @@ function translateLanguage(lang) {
     });
 }
 
+{% if modules.ldap.enabled %}
 // LDAP test button inside settings page
 document.addEventListener('click', function(e) {
     if (e.target && e.target.id === 'testConnection') {
@@ -711,5 +722,6 @@ document.addEventListener('click', function(e) {
             });
     }
 });
+{% endif %}
 </script>
 {% endblock %}

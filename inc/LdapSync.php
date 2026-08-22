@@ -37,8 +37,15 @@ class LdapSync
             
             $stmt = $db->query("SELECT * FROM ldap_configs WHERE id = 1");
             $this->config = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        } catch (PDOException $e) {
-            // If any error occurs, use empty config
+            if (!empty($this->config['bind_password'])) {
+                $this->config['bind_password'] = SecretStore::decrypt(
+                    (string) $this->config['bind_password'],
+                    'ldap:bind_password'
+                );
+            }
+        } catch (Throwable $e) {
+            // Fail LDAP closed while preserving local authentication availability.
+            error_log('LDAP configuration is unavailable: ' . $e->getMessage());
             $this->config = [];
         }
     }

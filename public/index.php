@@ -29,15 +29,18 @@ require_once __DIR__ . '/../inc/UserRolePolicy.php';
 require_once __DIR__ . '/../inc/Auth.php';
 require_once __DIR__ . '/../inc/Branding.php';
 require_once __DIR__ . '/../inc/Csrf.php';
+require_once __DIR__ . '/../inc/Security/SecretStore.php';
 require_once __DIR__ . '/../inc/EmailTwoFactorSettings.php';
 require_once __DIR__ . '/../inc/EmailTwoFactorMailer.php';
 require_once __DIR__ . '/../inc/ConnectionEmailService.php';
 require_once __DIR__ . '/../inc/EmailTwoFactorAuth.php';
+require_once __DIR__ . '/../inc/Modules/FeatureModuleRegistry.php';
 require_once __DIR__ . '/../inc/Router.php';
 require_once __DIR__ . '/../inc/View.php';
 require_once __DIR__ . '/../inc/VpnServer.php';
 require_once __DIR__ . '/../inc/VpnClient.php';
 require_once __DIR__ . '/../inc/UserServerAccess.php';
+require_once __DIR__ . '/../inc/ServerApiProjection.php';
 require_once __DIR__ . '/../inc/UserPasswordPolicy.php';
 require_once __DIR__ . '/../inc/Translator.php';
 require_once __DIR__ . '/../inc/JWT.php';
@@ -59,6 +62,7 @@ require_once __DIR__ . '/../inc/Routing/DynamicRoutingModuleService.php';
 
 // Load environment configuration
 Config::load(__DIR__ . '/../.env');
+FeatureModuleRegistry::boot(__DIR__ . '/../modules');
 
 // Test database connection
 try {
@@ -120,6 +124,7 @@ View::init(__DIR__ . '/../templates', [
     'current_uri' => $_SERVER['REQUEST_URI'] ?? '/dashboard',
     'current_year' => date('Y'),
     'csrf_token' => Csrf::token(),
+    'modules' => FeatureModuleRegistry::states(),
     't' => function ($key, $params = []) {
         return Translator::t($key, $params);
     }
@@ -572,7 +577,8 @@ Router::get('/dashboard', function () {
     $user = Auth::user();
 
     // Get user's servers
-    $servers = (($user['role'] ?? '') === 'admin')
+    $isAdmin = (($user['role'] ?? '') === 'admin');
+    $servers = $isAdmin
         ? VpnServer::listAll()
         : VpnServer::listByUser($user['id']);
 
@@ -2246,7 +2252,8 @@ Router::get('/api/servers', function () {
     if (!$user)
         return;
 
-    $servers = (($user['role'] ?? '') === 'admin')
+    $isAdmin = (($user['role'] ?? '') === 'admin');
+    $servers = $isAdmin
         ? VpnServer::listAll()
         : VpnServer::listByUser($user['id']);
 
@@ -2258,6 +2265,8 @@ Router::get('/api/servers', function () {
         $server['protocols'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     unset($server);
+
+    $servers = ServerApiProjection::collection($servers, $isAdmin);
 
     echo json_encode(['servers' => $servers]);
 });
@@ -4345,6 +4354,15 @@ Router::post('/users/{id}/password', function ($params) {
     $controller->changeUserPassword($params['id']);
 });
 
+// Update another user's display name
+Router::post('/users/{id}/name', function ($params) {
+    requireUserManager();
+
+    require_once __DIR__ . '/../controllers/SettingsController.php';
+    $controller = new SettingsController();
+    $controller->changeUserName($params['id']);
+});
+
 // Update profile
 Router::post('/settings/profile', function () {
     requireAuth();
@@ -4430,32 +4448,6 @@ Router::post('/settings/allowed-ips', function () {
     require_once __DIR__ . '/../controllers/SettingsController.php';
     $controller = new SettingsController();
     $controller->saveClientAllowedIps();
-});
-
-// LDAP settings page
-Router::get('/settings/ldap', function () {
-    requireAdmin();
-    redirect('/settings#ldap');
-});
-
-// Save LDAP settings
-Router::post('/settings/ldap/save', function () {
-    requireAdmin();
-
-    require_once __DIR__ . '/../controllers/SettingsController.php';
-    require_once __DIR__ . '/../inc/LdapSync.php';
-    $controller = new SettingsController();
-    $controller->saveLdapSettings();
-});
-
-// Test LDAP connection
-Router::post('/settings/ldap/test', function () {
-    requireAdmin();
-
-    require_once __DIR__ . '/../controllers/SettingsController.php';
-    require_once __DIR__ . '/../inc/LdapSync.php';
-    $controller = new SettingsController();
-    $controller->testLdapConnection();
 });
 
 /**
@@ -4615,50 +4607,6 @@ Router::post('/admin/scenario/import', function () {
 
 // ===== Logs Management Routes (Admin Only) =====
 
-// ===== Routing Management Routes =====
-
-Router::get('/routing', function () {
-    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    $controller = new AdminRoutingController();
-    $controller->index();
-});
-
-Router::post('/routing/modules/create', function () {
-    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    (new AdminRoutingController())->createModule();
-});
-
-Router::post('/routing/modules/{module_id}/save-apply', function ($params) {
-    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    (new AdminRoutingController())->saveModule((int) $params['module_id']);
-});
-
-Router::post('/routing/modules/{module_id}/apply', function ($params) {
-    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    (new AdminRoutingController())->applyModule((int) $params['module_id']);
-});
-
-Router::post('/routing/modules/{module_id}/paths/create', function ($params) {
-    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    (new AdminRoutingController())->createPath((int) $params['module_id']);
-});
-
-Router::post('/routing/paths/{path_id}/save-apply', function ($params) {
-    require_once __DIR__ . '/../controllers/AdminRoutingController.php';
-    (new AdminRoutingController())->savePath((int) $params['path_id']);
-});
-
-Router::get('/my/routes', function () {
-    requireAuth();
-    redirect('/dashboard');
-});
-
-Router::get('/api/routing/status', function () {
-    require_once __DIR__ . '/../controllers/RoutingApiController.php';
-    $controller = new RoutingApiController();
-    $controller->status();
-});
-
 // List and view logs
 Router::get('/admin/logs', function () {
     requireAdmin();
@@ -4706,6 +4654,9 @@ Router::post('/admin/logs/stats', function () {
     $controller = new LogsController();
     $controller->stats();
 });
+
+// Module-owned routes are discovered after core routes and before dispatch.
+FeatureModuleRegistry::registerRoutes();
 
 // Dispatch router
 Router::dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

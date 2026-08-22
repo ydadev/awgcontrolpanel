@@ -6,8 +6,10 @@ class OpenRouterService {
     private $apiUrl = 'https://openrouter.ai/api/v1';
     private $timeout = 60; // 60 seconds timeout for AI generation
     
-    public function __construct() {
-        $this->apiKey = $_ENV['OPENROUTER_API_KEY'] ?? null;
+    public function __construct(?string $apiKey = null) {
+        $this->apiKey = $apiKey
+            ?? Translator::getApiKey('openrouter')
+            ?? Config::get('OPENROUTER_API_KEY');
         if (!$this->apiKey) {
             throw new Exception('OpenRouter API key not configured');
         }
