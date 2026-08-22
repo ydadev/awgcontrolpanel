@@ -558,28 +558,21 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     INDEX idx_filename (filename)
 );
 EOF
-    
-    # Detect legacy installs missing baseline migration records
-    LEGACY_BASELINE_CHECK=$($DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -sN -e "SELECT COUNT(*) FROM schema_migrations WHERE filename = '010_add_monitoring_translations.sql';" 2>/dev/null || echo "0")
-    if [ "$LEGACY_BASELINE_CHECK" = "0" ]; then
-        HAS_TRANSLATIONS_LOCALE=$($DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -sN -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'translations' AND COLUMN_NAME = 'locale';" 2>/dev/null || echo "0")
-        HAS_TRANSLATIONS_LANGUAGE_CODE=$($DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -sN -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'translations' AND COLUMN_NAME = 'language_code';" 2>/dev/null || echo "0")
-        if [ "$HAS_TRANSLATIONS_LOCALE" != "0" ] && [ "$HAS_TRANSLATIONS_LANGUAGE_CODE" = "0" ]; then
-            log_warning "Detected legacy install without migration records. Seeding baseline entries..."
-            $DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -e "INSERT IGNORE INTO schema_migrations (filename) VALUES \
-            ('000_create_user.sql'),('001_init.sql'),('002_translations_ru.sql'),('003_translations_es.sql'),('004_translations_de.sql'),('005_translations_fr.sql'),('006_translations_zh.sql'),('007_add_traffic_limit.sql'),('008_add_panel_imports.sql'),('009_add_server_metrics.sql'),('010_add_monitoring_translations.sql');" 2>>"$LOG_FILE" || true
-            $DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -e "INSERT IGNORE INTO user_roles (name, display_name, description, permissions) VALUES \
-            ('admin','Administrator','Full access to all features', JSON_ARRAY('*')),\
-            ('manager','Manager','Can manage servers and clients', JSON_ARRAY('servers.view','servers.create','servers.edit','clients.view','clients.create','clients.edit','clients.delete')),\
-            ('viewer','Viewer','Can only view own clients', JSON_ARRAY('clients.view_own','clients.download_own'));" 2>>"$LOG_FILE" || true
-            $DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -e "INSERT IGNORE INTO ldap_group_mappings (ldap_group, role_name, description) VALUES \
-            ('vpn-admins','admin','VPN administrators with full access'),\
-            ('vpn-managers','manager','VPN managers who can create and manage clients'),\
-            ('vpn-users','viewer','Regular VPN users with view-only access');" 2>>"$LOG_FILE" || true
-            log_success "Baseline migration entries seeded"
-        fi
+
+    # Do not execute SQL when history is incomplete, reordered or has checksum
+    # drift. Legacy installations require an explicit verified baseline.
+    log_info "Verifying migration history and checksums..."
+    if ! $DOCKER_COMPOSE exec -T web php /var/www/html/bin/migrations.php verify-history 2>&1 | tee -a "$LOG_FILE"; then
+        error_exit "Migration history is unsafe. Reconcile the verified baseline before updating."
     fi
 
+    # Prevent concurrent update processes from interleaving migrations.
+    MIGRATION_LOCK_FILE="${MIGRATION_LOCK_FILE:-/tmp/awgcontrolpanel-migrations.lock}"
+    exec 9>"$MIGRATION_LOCK_FILE"
+    if ! flock -n 9; then
+        error_exit "Another migration process is already running"
+    fi
+    
     # Apply each migration
     APPLIED_COUNT=0
     SKIPPED_COUNT=0
@@ -593,7 +586,8 @@ EOF
         if [ "$ALREADY_APPLIED" = "0" ]; then
             log_info "Applying: $FILENAME"
             
-            # Apply migration
+            # Apply migration. The first SQL error aborts the entire update;
+            # failed or partially executed files are never marked as applied.
             if cat "$migration" | $DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" 2>>"$LOG_FILE"; then
                 # Calculate checksum
                 CHECKSUM=$(sha256sum "$migration" | cut -d' ' -f1)
@@ -604,21 +598,7 @@ EOF
                 log_success "Applied: $FILENAME"
                 APPLIED_COUNT=$((APPLIED_COUNT + 1))
             else
-                # Check error log for "already exists" errors (idempotent migrations)
-                LAST_ERROR=$(tail -30 "$LOG_FILE" | grep -i "ERROR.*already exists\|ERROR.*Duplicate\|ERROR.*Table.*already" || echo "")
-                
-                if [ -n "$LAST_ERROR" ]; then
-                    log_warning "Migration $FILENAME skipped (tables already exist)"
-                    
-                    # Mark as applied to prevent re-running
-                    CHECKSUM=$(sha256sum "$migration" | cut -d' ' -f1)
-                    $DOCKER_COMPOSE exec -T db mysql -uroot -p"$DB_ROOT_PASS" "$DB_NAME" -e "INSERT IGNORE INTO schema_migrations (filename, checksum) VALUES ('$FILENAME', '$CHECKSUM');" 2>>"$LOG_FILE"
-                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
-                else
-                    log_error "Failed to apply: $FILENAME"
-                    log_warning "Check $LOG_FILE for details. Continuing with next migration..."
-                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
-                fi
+                error_exit "Failed to apply migration: $FILENAME"
             fi
         else
             SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
@@ -630,6 +610,8 @@ EOF
     else
         log_success "Applied $APPLIED_COUNT new migration(s), skipped $SKIPPED_COUNT"
     fi
+
+    flock -u 9
 fi
 
 # ==========================================

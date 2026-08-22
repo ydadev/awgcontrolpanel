@@ -199,9 +199,7 @@ class EmailTwoFactorSettings {
     }
 
     private static function encrypt(string $plaintext): string {
-        $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
-        $ciphertext = sodium_crypto_secretbox($plaintext, $nonce, self::encryptionKey());
-        return base64_encode($nonce . $ciphertext);
+        return SecretStore::encrypt($plaintext, 'settings:smtp_password');
     }
 
     private static function decrypt(string $encoded): string {
@@ -209,6 +207,11 @@ class EmailTwoFactorSettings {
             return '';
         }
 
+        if (SecretStore::isEncrypted($encoded)) {
+            return SecretStore::decrypt($encoded, 'settings:smtp_password');
+        }
+
+        // Backward-compatible read for SMTP values written before SecretStore.
         $payload = base64_decode($encoded, true);
         if ($payload === false || strlen($payload) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
             throw new RuntimeException('Stored SMTP password is invalid');

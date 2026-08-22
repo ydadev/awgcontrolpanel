@@ -227,15 +227,7 @@ class Translator {
      * Get OpenRouter API key from database
      */
     private static function getOpenRouterKey(): ?string {
-        try {
-            $pdo = DB::conn();
-            $stmt = $pdo->prepare("SELECT api_key FROM api_keys WHERE service_name = 'openrouter' AND is_active = 1 LIMIT 1");
-            $stmt->execute();
-            return $stmt->fetchColumn() ?: null;
-        } catch (Exception $e) {
-            error_log('Failed to get OpenRouter API key: ' . $e->getMessage());
-            return null;
-        }
+        return self::getApiKey('openrouter');
     }
     
     /**
@@ -592,13 +584,18 @@ class Translator {
      */
     public static function saveApiKey(string $serviceName, string $apiKey): bool {
         try {
+            $serviceName = strtolower(trim($serviceName));
+            if ($serviceName === '' || $apiKey === '') {
+                return false;
+            }
+            $storedApiKey = SecretStore::encrypt($apiKey, self::apiKeyPurpose($serviceName));
             $pdo = DB::conn();
             $stmt = $pdo->prepare('
                 INSERT INTO api_keys (service_name, api_key, is_active)
                 VALUES (?, ?, 1)
                 ON DUPLICATE KEY UPDATE api_key = VALUES(api_key), updated_at = NOW()
             ');
-            return $stmt->execute([$serviceName, $apiKey]);
+            return $stmt->execute([$serviceName, $storedApiKey]);
         } catch (Exception $e) {
             error_log('Failed to save API key: ' . $e->getMessage());
             return false;
@@ -610,12 +607,24 @@ class Translator {
      */
     public static function getApiKey(string $serviceName): ?string {
         try {
+            $serviceName = strtolower(trim($serviceName));
+            if ($serviceName === '') {
+                return null;
+            }
             $pdo = DB::conn();
             $stmt = $pdo->prepare("SELECT api_key FROM api_keys WHERE service_name = ? AND is_active = 1 LIMIT 1");
             $stmt->execute([$serviceName]);
-            return $stmt->fetchColumn() ?: null;
-        } catch (Exception $e) {
+            $stored = $stmt->fetchColumn();
+            return is_string($stored) && $stored !== ''
+                ? SecretStore::decrypt($stored, self::apiKeyPurpose($serviceName))
+                : null;
+        } catch (Throwable $e) {
+            error_log('Failed to read API key: ' . $e->getMessage());
             return null;
         }
+    }
+
+    private static function apiKeyPurpose(string $serviceName): string {
+        return 'api_key:' . $serviceName;
     }
 }

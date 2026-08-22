@@ -43,6 +43,7 @@ $requiredUsersFragments = [
     'data-user-email',
     "toLocaleLowerCase('ru-RU')",
     'action="/users/add"',
+    'action="/users/{{ u.id }}/name"',
     'action="/users/{{ u.id }}/server-access"',
 ];
 
@@ -61,6 +62,7 @@ if (strpos($layout, 'xl:space-x-4 2xl:space-x-6') === false
 }
 
 if (strpos($controller, 'public function users()') === false
+    || strpos($controller, 'public function changeUserName($userId)') === false
     || strpos($controller, "header('Location: /settings#users')") !== false) {
     fwrite(STDERR, "Users controller or redirects are not migrated\n");
     exit(1);
@@ -68,6 +70,12 @@ if (strpos($controller, 'public function users()') === false
 
 if (!preg_match("/Router::get\('\/users'.*?requireUserManager\(\).*?->users\(\)/s", $router)) {
     fwrite(STDERR, "User-manager route is missing\n");
+    exit(1);
+}
+
+if (!preg_match("/Router::post\('\/users\/\{id\}\/name'.*?requireUserManager\(\)/s", $router)
+    || strpos($router, "\$controller->changeUserName(\$params['id']);") === false) {
+    fwrite(STDERR, "User name update route is missing\n");
     exit(1);
 }
 

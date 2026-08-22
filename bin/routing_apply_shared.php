@@ -8,6 +8,7 @@ if (PHP_SAPI !== 'cli') {
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../inc/Config.php';
 require_once __DIR__ . '/../inc/DB.php';
+require_once __DIR__ . '/../inc/Modules/FeatureModuleRegistry.php';
 require_once __DIR__ . '/../inc/UserServerAccess.php';
 require_once __DIR__ . '/../inc/VpnServer.php';
 require_once __DIR__ . '/../inc/Routing/RoutingValidator.php';
@@ -15,6 +16,11 @@ require_once __DIR__ . '/../inc/Routing/RoutingAuditService.php';
 require_once __DIR__ . '/../inc/Routing/RoutingRouteTargetService.php';
 
 Config::load(__DIR__ . '/../.env');
+FeatureModuleRegistry::boot(__DIR__ . '/../modules');
+if (!FeatureModuleRegistry::isEnabled('routing')) {
+    echo "Routing module is disabled\n";
+    exit(0);
+}
 
 $selector = trim((string) ($argv[1] ?? ''));
 if ($selector === '') {
