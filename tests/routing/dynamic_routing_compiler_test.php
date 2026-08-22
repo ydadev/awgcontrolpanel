@@ -154,19 +154,8 @@ foreach ([
         exit(1);
     }
 }
-foreach ([
-    '-d 192.0.2.53 -p tcp -m tcp --dport 853 -j REJECT --reject-with tcp-reset',
-    '-d 192.0.2.53 -p udp -m udp --dport 443 -j REJECT',
-    '-d 8.8.8.8 -p udp -m multiport --dports 784,8853 -j REJECT',
-    'iptables -I FORWARD 1 -j AWG_POLICY_DNS_GUARD',
-] as $needle) {
-    if (!str_contains($refresh, $needle)) {
-        fwrite(STDERR, 'Generated refresh script omits scoped DNS guard: ' . $needle . PHP_EOL);
-        exit(1);
-    }
-}
-if (str_contains($refresh, '-i "$interface" -p tcp -m tcp --dport 853')) {
-    fwrite(STDERR, 'Generated DNS guard blocks arbitrary encrypted DNS destinations' . PHP_EOL);
+if (!str_contains($refresh, 'iptables -X AWG_POLICY_DNS_GUARD 2>/dev/null || true')) {
+    fwrite(STDERR, 'Generated refresh script does not clean up obsolete DNS guard chains' . PHP_EOL);
     exit(1);
 }
 
