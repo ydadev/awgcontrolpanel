@@ -1574,7 +1574,15 @@ class VpnClient
 
     private static function applyClientAllowedIpsMode(string $config, string $mode, string $endpointHost = ''): string
     {
-        $allowedIps = ClientAllowedIpsPolicy::allowedIpsForEndpoint($mode, $endpointHost);
+        $dnsServers = '';
+        if (preg_match('/^[ \t]*DNS[ \t]*=[ \t]*(.+)$/mi', $config, $dnsMatch)) {
+            $dnsServers = trim((string) $dnsMatch[1]);
+        }
+        $allowedIps = ClientAllowedIpsPolicy::allowedIpsForEndpointAndDns(
+            $mode,
+            $endpointHost,
+            $dnsServers
+        );
         $count = 0;
         $updated = preg_replace(
             '/^[ \t]*AllowedIPs[ \t]*=.*$/mi',
