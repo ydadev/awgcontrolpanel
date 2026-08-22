@@ -230,6 +230,7 @@ class DynamicRoutingCompiler
             '# Managed by AWG Control Panel dynamic routing module.',
             'no-resolv',
             'domain-needed',
+            'filter-AAAA',
             'cache-size=' . $cacheSize,
             'max-cache-ttl=' . $maxCacheTtl,
         ];

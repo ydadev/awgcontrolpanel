@@ -110,6 +110,7 @@ if ($staticOffice === false || $protected === false || $dynamic === false
 
 $dnsmasq = DynamicRoutingCompiler::compileDnsmasq($module);
 foreach ([
+    'filter-AAAA',
     'server=192.0.2.53',
     'server=8.8.8.8#53',
     'nftset=/*.youtube.com/4#inet#awg_policy#p12_dynamic4',
@@ -122,6 +123,7 @@ foreach ([
 }
 $dnsmasqIpSet = DynamicRoutingCompiler::compileDnsmasq($module, 'ipset');
 foreach ([
+    'filter-AAAA',
     'ipset=/*.youtube.com/awg_p12_dynamic4',
     'ipset=/*.com/awg_p12_dynamic4',
 ] as $needle) {
