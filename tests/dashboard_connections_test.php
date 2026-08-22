@@ -62,7 +62,7 @@ foreach (['$sortColumns', "['20', '50', 'all']", 'array_key_exists($sort, $sortC
         failDashboardConnectionsTest('Dashboard query validation omits: ' . $required);
     }
 }
-foreach (['name="connections_search"', 'connections_page=', 'connections.items', "sortable_header('Сервер'", "sortable_header('Срок действия'", "sortable_header('Лимит трафика'", "sortable_header('Скорость'", "'all': 'Все'"] as $required) {
+foreach (['name="connections_search"', 'connections_page=', 'connections.items', 'w-full max-w-none', "sortable_header('Сервер'", "sortable_header('Срок'", "sortable_header('Лимит'", "sortable_header('Скорость'", "'all': 'Все'"] as $required) {
     if (!str_contains($template, $required)) {
         failDashboardConnectionsTest('Dashboard template omits: ' . $required);
     }

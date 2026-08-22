@@ -19,7 +19,7 @@
 {% block title %}{{ t('dashboard.title') }} - {{ app_name }}{% endblock %}
 
 {% block content %}
-<div class="mx-auto px-4 sm:px-6 lg:px-8" style="max-width: 1600px;">
+<div class="w-full max-w-none px-2 sm:px-4 lg:px-6">
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">
             <i class="fas fa-tachometer-alt text-purple-600"></i>
@@ -103,7 +103,7 @@
 
         {% if connections.items|length > 0 %}
         <div class="w-full overflow-x-auto">
-            <table class="w-full divide-y divide-gray-200" style="min-width: 1540px; table-layout: fixed;">
+            <table class="w-full divide-y divide-gray-200" style="min-width: 1410px; table-layout: fixed;">
                 <thead class="bg-gray-50">
                     <tr>
                         {{ dashboard_ui.sortable_header('Сервер', 'server', connections, '130px') }}
@@ -112,9 +112,9 @@
                         {{ dashboard_ui.sortable_header('Протокол', 'protocol', connections, '145px') }}
                         {{ dashboard_ui.sortable_header('IP-адрес', 'ip', connections, '120px') }}
                         {{ dashboard_ui.sortable_header('Статус', 'status', connections, '105px') }}
-                        {{ dashboard_ui.sortable_header('Срок действия', 'expires_at', connections, '125px') }}
+                        {{ dashboard_ui.sortable_header('Срок', 'expires_at', connections, '80px') }}
                         {{ dashboard_ui.sortable_header('Трафик', 'traffic', connections, '130px') }}
-                        {{ dashboard_ui.sortable_header('Лимит трафика', 'traffic_limit', connections, '145px') }}
+                        {{ dashboard_ui.sortable_header('Лимит', 'traffic_limit', connections, '80px') }}
                         {{ dashboard_ui.sortable_header('Скорость', 'speed', connections, '125px') }}
                         {{ dashboard_ui.sortable_header('Последняя связь', 'last_handshake', connections, '135px') }}
                         <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase" style="width: 95px;">Действия</th>
