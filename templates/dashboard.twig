@@ -286,7 +286,7 @@ async function updateDashboardClientSpeed(row) {
     const clientId = row.dataset.clientId;
     const canvas = document.getElementById(`dashboardClientSparkline-${clientId}`);
     try {
-        const response = await fetch(`/api/clients/${clientId}/metrics?hours=24`, {credentials: 'same-origin'});
+        const response = await fetch(`/api/clients/${clientId}/metrics?hours=24&max_points=120`, {credentials: 'same-origin'});
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         const metrics = data.success && Array.isArray(data.metrics) ? data.metrics : [];

@@ -35,10 +35,16 @@ if ($userParams !== [23, 23]) {
 }
 
 $clientSource = file_get_contents(__DIR__ . '/../inc/VpnClient.php');
+$monitoringSource = file_get_contents(__DIR__ . '/../inc/ServerMonitoring.php');
 $routeSource = file_get_contents(__DIR__ . '/../public/index.php');
 $template = file_get_contents(__DIR__ . '/../templates/dashboard.twig');
-if (!is_string($clientSource) || !is_string($routeSource) || !is_string($template)) {
+if (!is_string($clientSource) || !is_string($monitoringSource) || !is_string($routeSource) || !is_string($template)) {
     failDashboardConnectionsTest('Dashboard sources could not be read');
+}
+foreach (['getClientSpeedMetrics', 'AVG(speed_up_kbps)', '$maxPoints - 2'] as $required) {
+    if (!str_contains($monitoringSource, $required)) {
+        failDashboardConnectionsTest('Dashboard speed aggregation omits: ' . $required);
+    }
 }
 if (!str_contains($clientSource, 'LIMIT \' . $effectivePerPage . \' OFFSET \' . $offset')) {
     failDashboardConnectionsTest('Dashboard query does not enforce SQL pagination');
@@ -61,7 +67,7 @@ foreach (['name="connections_search"', 'connections_page=', 'connections.items',
         failDashboardConnectionsTest('Dashboard template omits: ' . $required);
     }
 }
-foreach (['dashboardClientSparkline-', '/api/clients/${clientId}/metrics?hours=24', 'prepareDashboardSparklineSeries', 'rows.slice(index, index + 6)', 'setInterval(updateDashboardClientSpeeds, 30000)'] as $required) {
+foreach (['dashboardClientSparkline-', '/api/clients/${clientId}/metrics?hours=24&max_points=120', 'prepareDashboardSparklineSeries', 'rows.slice(index, index + 6)', 'setInterval(updateDashboardClientSpeeds, 30000)'] as $required) {
     if (!str_contains($template, $required)) {
         failDashboardConnectionsTest('Dashboard speed chart omits: ' . $required);
     }

@@ -615,6 +615,28 @@ class ServerMonitoring
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    public static function getClientSpeedMetrics(int $clientId, int $hours = 24, int $maxPoints = 120): array
+    {
+        $db = DB::conn();
+        $hours = max(1, min(168, $hours));
+        $maxPoints = max(20, min(240, $maxPoints));
+        $bucketSeconds = max(1, (int) ceil(($hours * 3600) / ($maxPoints - 2)));
+
+        $stmt = $db->prepare('
+            SELECT AVG(speed_up_kbps) AS speed_up_kbps,
+                   AVG(speed_down_kbps) AS speed_down_kbps,
+                   MAX(collected_at) AS collected_at
+            FROM client_metrics
+            WHERE client_id = ?
+              AND collected_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+            GROUP BY FLOOR(UNIX_TIMESTAMP(collected_at) / ?)
+            ORDER BY collected_at ASC
+        ');
+        $stmt->execute([$clientId, $hours, $bucketSeconds]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /**
      * Clean old metrics (older than 24 hours)
      */

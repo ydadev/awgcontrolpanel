@@ -2876,7 +2876,10 @@ Router::get('/api/clients/{id}/metrics', function ($params) {
             return;
         }
 
-        $metrics = ServerMonitoring::getClientMetrics($clientId, $hours);
+        $maxPoints = isset($_GET['max_points']) ? (int) $_GET['max_points'] : 0;
+        $metrics = $maxPoints > 0
+            ? ServerMonitoring::getClientSpeedMetrics($clientId, (int) $hours, $maxPoints)
+            : ServerMonitoring::getClientMetrics($clientId, $hours);
 
         echo json_encode(['success' => true, 'metrics' => $metrics]);
     } catch (Exception $e) {
