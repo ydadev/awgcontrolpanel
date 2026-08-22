@@ -1,9 +1,25 @@
 {% extends "layout.twig" %}
 
+{% macro sortable_header(label, key, connections, width) %}
+    {% set next_direction = connections.sort == key and connections.direction == 'asc' ? 'desc' : 'asc' %}
+    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" style="width: {{ width }};">
+        <a class="inline-flex items-center gap-1 hover:text-gray-900" href="/dashboard?connections_sort={{ key }}&connections_direction={{ next_direction }}&connections_per_page={{ connections.per_page }}{% if connections.search %}&connections_search={{ connections.search|url_encode }}{% endif %}">
+            {{ label }}
+            {% if connections.sort == key %}
+            <i class="fas fa-sort-{{ connections.direction == 'asc' ? 'up' : 'down' }}" aria-hidden="true"></i>
+            {% else %}
+            <i class="fas fa-sort text-gray-300" aria-hidden="true"></i>
+            {% endif %}
+        </a>
+    </th>
+{% endmacro %}
+
+{% import _self as dashboard_ui %}
+
 {% block title %}{{ t('dashboard.title') }} - {{ app_name }}{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="mx-auto px-4 sm:px-6 lg:px-8" style="max-width: 1600px;">
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900">
             <i class="fas fa-tachometer-alt text-purple-600"></i>
@@ -33,7 +49,7 @@
                 </div>
                 <div class="ml-4">
                     <p class="text-sm font-medium text-gray-600">Всего подключений</p>
-                    <p class="text-2xl font-bold text-gray-900">{{ clients|length }}</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ connections.total_visible|default(0) }}</p>
                 </div>
             </div>
         </div>
@@ -53,64 +69,180 @@
         </div>
     </div>
 
-    <!-- Recent Servers -->
-    {% if servers|length > 0 %}
     <div class="bg-white rounded-lg shadow overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-200">
-            <h2 class="text-xl font-bold text-gray-900">
-                <i class="fas fa-server text-blue-600"></i>
-                {{ t('dashboard.recent_servers') }}
+        <div class="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <h2 class="text-xl font-bold text-gray-900 whitespace-nowrap">
+                <i class="fas fa-plug text-green-600"></i>
+                Подключения ({{ connections.total_filtered|default(0) }})
             </h2>
+            <form method="GET" action="/dashboard" class="flex w-full lg:w-auto items-center gap-2">
+                <input type="hidden" name="connections_per_page" value="{{ connections.per_page }}">
+                <input type="hidden" name="connections_sort" value="{{ connections.sort }}">
+                <input type="hidden" name="connections_direction" value="{{ connections.direction }}">
+                <div class="relative flex-1 lg:w-96">
+                    <i class="fas fa-search absolute left-3 top-1/2 text-gray-400" style="transform: translateY(-50%);"></i>
+                    <input
+                        type="search"
+                        name="connections_search"
+                        value="{{ connections.search|default('') }}"
+                        maxlength="120"
+                        placeholder="Поиск по имени или почте"
+                        class="w-full border border-gray-300 rounded pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                </div>
+                <button type="submit" class="gradient-bg text-white px-4 py-2 rounded text-sm whitespace-nowrap">
+                    <i class="fas fa-search mr-1"></i> Найти
+                </button>
+                {% if connections.search %}
+                <a href="/dashboard" class="text-gray-500 hover:text-gray-800 p-2" title="Сбросить поиск" aria-label="Сбросить поиск">
+                    <i class="fas fa-times"></i>
+                </a>
+                {% endif %}
+            </form>
         </div>
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('servers.name') }}</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('servers.host') }}</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('servers.status') }}</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('servers.actions') }}</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-                {% for server in servers|slice(0, 5) %}
-                <tr>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {{ server.name }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ server.host }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        {% if server.status == 'active' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            {{ t('status.active') }}
-                        </span>
-                        {% elseif server.status == 'deploying' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            {{ t('status.deploying') }}
-                        </span>
-                        {% else %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                            {{ server.status|capitalize }}
-                        </span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <a href="/servers/{{ server.id }}" class="text-purple-600 hover:text-purple-900">
-                            <i class="fas fa-eye"></i> {{ t('servers.view') }}
-                        </a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+
+        {% if connections.items|length > 0 %}
+        <div class="w-full overflow-x-auto">
+            <table class="w-full divide-y divide-gray-200" style="min-width: 1540px; table-layout: fixed;">
+                <thead class="bg-gray-50">
+                    <tr>
+                        {{ dashboard_ui.sortable_header('Сервер', 'server', connections, '130px') }}
+                        {{ dashboard_ui.sortable_header('Подключение', 'connection', connections, '170px') }}
+                        {{ dashboard_ui.sortable_header('Владелец', 'owner', connections, '230px') }}
+                        {{ dashboard_ui.sortable_header('Протокол', 'protocol', connections, '145px') }}
+                        {{ dashboard_ui.sortable_header('IP-адрес', 'ip', connections, '120px') }}
+                        {{ dashboard_ui.sortable_header('Статус', 'status', connections, '105px') }}
+                        {{ dashboard_ui.sortable_header('Срок действия', 'expires_at', connections, '125px') }}
+                        {{ dashboard_ui.sortable_header('Трафик', 'traffic', connections, '130px') }}
+                        {{ dashboard_ui.sortable_header('Лимит трафика', 'traffic_limit', connections, '145px') }}
+                        {{ dashboard_ui.sortable_header('Скорость', 'speed', connections, '125px') }}
+                        {{ dashboard_ui.sortable_header('Последняя связь', 'last_handshake', connections, '135px') }}
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase" style="width: 95px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for client in connections.items %}
+                    {% set is_online = client.last_handshake and (("now"|date('U') - client.last_handshake|date('U')) < 300) %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 text-sm font-semibold text-gray-900 truncate" title="{{ client.server_name }}">
+                            <a href="/servers/{{ client.server_id }}" class="hover:text-green-700">{{ client.server_name }}</a>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-900 truncate" title="{{ client.name }}">{{ client.name }}</td>
+                        <td class="px-4 py-3">
+                            <div class="text-sm font-medium text-gray-900 truncate" title="{{ client.owner_name|default(client.owner_email) }}">
+                                {{ client.owner_name|default(client.owner_email)|default('Unknown') }}
+                            </div>
+                            <div class="text-xs text-gray-500 truncate" title="{{ client.owner_email|default('') }}">{{ client.owner_email|default('') }}</div>
+                        </td>
+                        <td class="px-4 py-3 text-sm">
+                            {% if client.protocol_name %}
+                            <span class="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs truncate" style="max-width: 125px;" title="{{ client.protocol_name }}">{{ client.protocol_name }}</span>
+                            {% else %}
+                            <span class="text-gray-400">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700 font-mono whitespace-nowrap">{{ client.client_ip }}</td>
+                        <td class="px-4 py-3 text-sm whitespace-nowrap">
+                            {% if is_online %}
+                            <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs"><i class="fas fa-wifi mr-1"></i>Online</span>
+                            {% elseif client.status == 'active' %}
+                            <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">{{ t('status.active') }}</span>
+                            {% else %}
+                            <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">{{ t('status.disabled') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-xs whitespace-nowrap">
+                            {% if client.expires_at %}
+                                {% set expires_ts = client.expires_at|date('U') %}
+                                {% set diff_days = ((expires_ts - "now"|date('U')) / 86400)|round %}
+                                {% if diff_days < 0 %}
+                                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">Истёк</span>
+                                {% elseif diff_days <= 7 %}
+                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">{{ diff_days }} дн.</span>
+                                {% else %}
+                                <span class="text-gray-600">{{ client.expires_at|date('Y-m-d') }}</span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-green-500 text-lg" title="Бессрочно">&infin;</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-xs text-gray-600 font-mono whitespace-nowrap">
+                            <div>↑{{ (client.bytes_sent|default(0) / 1024 / 1024)|number_format(2) }} MB</div>
+                            <div>↓{{ (client.bytes_received|default(0) / 1024 / 1024)|number_format(2) }} MB</div>
+                        </td>
+                        <td class="px-4 py-3 text-xs whitespace-nowrap">
+                            {% if client.traffic_limit %}
+                                {% set total_traffic = client.bytes_sent|default(0) + client.bytes_received|default(0) %}
+                                {% set limit_gb = (client.traffic_limit / 1073741824)|number_format(2) %}
+                                {% set used_gb = (total_traffic / 1073741824)|number_format(2) %}
+                                {% set percentage = ((total_traffic / client.traffic_limit) * 100)|round %}
+                                {% if percentage >= 100 %}
+                                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">Превышен</span>
+                                {% elseif percentage >= 80 %}
+                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">{{ used_gb }} / {{ limit_gb }} GB</span>
+                                {% else %}
+                                <span class="text-gray-600">{{ used_gb }} / {{ limit_gb }} GB</span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-green-500 text-lg" title="Безлимитно">&infin;</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-xs font-mono whitespace-nowrap">
+                            <div class="text-green-600">↑{{ ((client.speed_up|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+                            <div class="text-blue-600">↓{{ ((client.speed_down|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                            {% if client.last_handshake %}
+                            <div>{{ client.last_handshake|split(' ')|first }}</div>
+                            <div class="text-gray-400">{{ client.last_handshake|split(' ')|last }}</div>
+                            {% else %}
+                            <span class="text-gray-400">{{ t('clients.never') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <a href="/clients/{{ client.id }}" class="text-green-600 hover:text-green-800 text-sm whitespace-nowrap">
+                                <i class="fas fa-eye mr-1"></i>Открыть
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="px-4 sm:px-6 py-4 border-t border-gray-200 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="text-sm text-gray-500">Страница {{ connections.page }} из {{ connections.total_pages }}</div>
+                <div class="flex items-center gap-1 text-sm" aria-label="Количество строк на странице">
+                    <span class="text-gray-500 mr-1">Показывать:</span>
+                    {% for per_page_value, per_page_label in {'20': '20', '50': '50', 'all': 'Все'} %}
+                    <a href="/dashboard?connections_per_page={{ per_page_value }}&connections_sort={{ connections.sort }}&connections_direction={{ connections.direction }}{% if connections.search %}&connections_search={{ connections.search|url_encode }}{% endif %}" class="px-2 py-1 rounded {{ connections.per_page == per_page_value ? 'bg-green-100 text-green-800 font-semibold' : 'text-gray-600 hover:bg-gray-100' }}">{{ per_page_label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if connections.page > 1 %}
+                <a href="/dashboard?connections_page={{ connections.page - 1 }}&connections_per_page={{ connections.per_page }}&connections_sort={{ connections.sort }}&connections_direction={{ connections.direction }}{% if connections.search %}&connections_search={{ connections.search|url_encode }}{% endif %}" class="border border-gray-300 px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-chevron-left mr-1"></i>Назад
+                </a>
+                {% else %}
+                <span class="border border-gray-200 px-3 py-2 rounded text-sm text-gray-300 cursor-not-allowed"><i class="fas fa-chevron-left mr-1"></i>Назад</span>
+                {% endif %}
+                {% if connections.page < connections.total_pages %}
+                <a href="/dashboard?connections_page={{ connections.page + 1 }}&connections_per_page={{ connections.per_page }}&connections_sort={{ connections.sort }}&connections_direction={{ connections.direction }}{% if connections.search %}&connections_search={{ connections.search|url_encode }}{% endif %}" class="border border-gray-300 px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-50">
+                    Вперёд<i class="fas fa-chevron-right ml-1"></i>
+                </a>
+                {% else %}
+                <span class="border border-gray-200 px-3 py-2 rounded text-sm text-gray-300 cursor-not-allowed">Вперёд<i class="fas fa-chevron-right ml-1"></i></span>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="p-12 text-center text-gray-500">
+            <i class="fas fa-plug text-gray-300 text-5xl mb-4"></i>
+            <p>{{ connections.search ? 'Подключения по заданному поиску не найдены' : 'Подключений пока нет' }}</p>
+        </div>
+        {% endif %}
     </div>
-    {% else %}
-    <div class="bg-white rounded-lg shadow p-12 text-center">
-        <i class="fas fa-server text-gray-300 text-6xl mb-4"></i>
-        <h3 class="text-xl font-medium text-gray-900 mb-2">{{ t('dashboard.no_servers') }}</h3>
-        <p class="text-gray-500">{{ user.role == 'admin' ? 'Управление серверами доступно во вкладке Серверы.' : 'No servers have been assigned to your account yet.' }}</p>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}

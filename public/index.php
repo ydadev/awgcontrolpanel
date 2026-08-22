@@ -582,30 +582,33 @@ Router::get('/dashboard', function () {
         ? VpnServer::listAll()
         : VpnServer::listByUser($user['id']);
 
-    // Get user's clients
-    $clients = VpnClient::listByUser($user['id']);
+    $connectionSearch = trim((string) ($_GET['connections_search'] ?? ''));
+    $connectionPage = max(1, (int) ($_GET['connections_page'] ?? 1));
+    $connectionPerPage = (string) ($_GET['connections_per_page'] ?? '20');
+    $connectionSort = (string) ($_GET['connections_sort'] ?? 'created_at');
+    $connectionDirection = (string) ($_GET['connections_direction'] ?? 'desc');
+    $connections = VpnClient::dashboardPage(
+        $user,
+        $connectionSearch,
+        $connectionPage,
+        $connectionPerPage,
+        $connectionSort,
+        $connectionDirection
+    );
 
-    // Get real-time online clients count from Xray API
-    $onlineData = ServerMonitoring::countOnlineClients();
-
-    // Also count clients with recent handshake (within 5 minutes) for WireGuard/AWG
-    $pdo = DB::conn();
-    $stmt = $pdo->query("
-        SELECT COUNT(*) as cnt FROM vpn_clients 
-        WHERE last_handshake IS NOT NULL
-        AND last_handshake > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
-        AND status = 'active'
-    ");
-    $recentHandshakeCount = (int) $stmt->fetchColumn();
-
-    // Combine both counts (XRay online + recent handshake), avoiding duplicates
-    $totalOnline = max($onlineData['total'], $recentHandshakeCount);
+    $totalOnline = (int) $connections['online_visible'];
+    $onlineUsers = [];
+    if ($isAdmin) {
+        $onlineData = ServerMonitoring::countOnlineClients();
+        $totalOnline = max((int) ($onlineData['total'] ?? 0), $totalOnline);
+        $onlineUsers = $onlineData['users'] ?? [];
+    }
 
     View::render('dashboard.twig', [
         'servers' => $servers,
-        'clients' => $clients,
+        'connections' => $connections,
         'online_count' => $totalOnline,
-        'online_users' => $onlineData['users'],
+        'online_users' => $onlineUsers,
     ]);
 });
 

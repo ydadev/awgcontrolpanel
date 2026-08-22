@@ -2055,6 +2055,145 @@ class VpnClient
         return $stmt->fetchAll();
     }
 
+    public static function dashboardPage(
+        array $actor,
+        string $search = '',
+        int $page = 1,
+        string $perPage = '20',
+        string $sort = 'created_at',
+        string $direction = 'desc'
+    ): array
+    {
+        $pdo = DB::conn();
+        $actorId = (int) ($actor['id'] ?? 0);
+        $role = (string) ($actor['role'] ?? 'user');
+        $page = max(1, $page);
+        $perPage = in_array($perPage, ['20', '50', 'all'], true) ? $perPage : '20';
+        $sortColumns = [
+            'server' => 'LOWER(s.name)',
+            'connection' => 'LOWER(c.name)',
+            'owner' => 'LOWER(COALESCE(u.name, u.email, ""))',
+            'protocol' => 'LOWER(COALESCE(p.name, ""))',
+            'ip' => 'INET_ATON(c.client_ip)',
+            'status' => 'c.status',
+            'expires_at' => 'c.expires_at',
+            'traffic' => '(COALESCE(c.bytes_sent, 0) + COALESCE(c.bytes_received, 0))',
+            'traffic_limit' => 'c.traffic_limit',
+            'speed' => '(COALESCE(c.speed_up, 0) + COALESCE(c.speed_down, 0))',
+            'last_handshake' => 'c.last_handshake',
+            'created_at' => 'c.created_at',
+        ];
+        $sort = array_key_exists($sort, $sortColumns) ? $sort : 'created_at';
+        $direction = strtolower($direction) === 'asc' ? 'asc' : 'desc';
+        $search = trim($search);
+        $search = function_exists('mb_substr') ? mb_substr($search, 0, 120) : substr($search, 0, 120);
+
+        [$scopeSql, $scopeParams] = self::dashboardVisibilityScope($role, $actorId);
+        $searchSql = '';
+        $searchParams = [];
+        if ($search !== '') {
+            $needle = '%' . $search . '%';
+            $searchSql = ' AND (LOWER(COALESCE(u.name, "")) LIKE LOWER(?) OR LOWER(COALESCE(u.email, "")) LIKE LOWER(?))';
+            $searchParams = [$needle, $needle];
+        }
+
+        $joins = '
+            FROM vpn_clients c
+            JOIN vpn_servers s ON s.id = c.server_id
+            LEFT JOIN protocols p ON p.id = c.protocol_id
+            LEFT JOIN users u ON u.id = c.user_id
+            WHERE ' . $scopeSql;
+
+        $visibleStmt = $pdo->prepare('SELECT COUNT(*) ' . $joins);
+        $visibleStmt->execute($scopeParams);
+        $totalVisible = (int) $visibleStmt->fetchColumn();
+
+        $countStmt = $pdo->prepare('SELECT COUNT(*) ' . $joins . $searchSql);
+        $countStmt->execute(array_merge($scopeParams, $searchParams));
+        $totalFiltered = (int) $countStmt->fetchColumn();
+        $effectivePerPage = $perPage === 'all' ? max(1, $totalFiltered) : (int) $perPage;
+        $totalPages = $perPage === 'all' ? 1 : max(1, (int) ceil($totalFiltered / $effectivePerPage));
+        $page = min($page, $totalPages);
+        $offset = ($page - 1) * $effectivePerPage;
+
+        $onlineStmt = $pdo->prepare(
+            'SELECT COUNT(*) ' . $joins . '
+             AND c.status = "active"
+             AND c.last_handshake IS NOT NULL
+             AND c.last_handshake > DATE_SUB(NOW(), INTERVAL 5 MINUTE)'
+        );
+        $onlineStmt->execute($scopeParams);
+        $onlineVisible = (int) $onlineStmt->fetchColumn();
+
+        $itemsStmt = $pdo->prepare('
+            SELECT c.id, c.server_id, c.user_id, c.protocol_id, c.name, c.client_ip,
+                   c.status, c.expires_at, c.traffic_limit, c.bytes_sent, c.bytes_received,
+                   c.current_speed, c.speed_up, c.speed_down, c.last_handshake, c.created_at,
+                   s.name AS server_name, p.name AS protocol_name,
+                   u.email AS owner_email, u.name AS owner_name, u.role AS owner_role
+            ' . $joins . $searchSql . '
+            ORDER BY ' . $sortColumns[$sort] . ' ' . strtoupper($direction) . ', c.id DESC
+            LIMIT ' . $effectivePerPage . ' OFFSET ' . $offset
+        );
+        $itemsStmt->execute(array_merge($scopeParams, $searchParams));
+
+        return [
+            'items' => $itemsStmt->fetchAll(),
+            'search' => $search,
+            'page' => $page,
+            'per_page' => $perPage,
+            'sort' => $sort,
+            'direction' => $direction,
+            'total_visible' => $totalVisible,
+            'total_filtered' => $totalFiltered,
+            'total_pages' => $totalPages,
+            'online_visible' => $onlineVisible,
+        ];
+    }
+
+    private static function dashboardVisibilityScope(string $role, int $actorId): array
+    {
+        if ($role === 'admin') {
+            return ['1 = 1', []];
+        }
+
+        if ($actorId <= 0) {
+            return ['1 = 0', []];
+        }
+
+        if ($role === 'moderator') {
+            return [
+                '(
+                    (c.user_id = ? AND EXISTS (
+                        SELECT 1 FROM user_server_access own_access
+                        WHERE own_access.user_id = ?
+                          AND own_access.server_id = c.server_id
+                          AND own_access.can_view = 1
+                    ))
+                    OR
+                    (u.role = "user" AND EXISTS (
+                        SELECT 1 FROM user_server_access managed_access
+                        WHERE managed_access.user_id = ?
+                          AND managed_access.server_id = c.server_id
+                          AND managed_access.can_view = 1
+                          AND managed_access.can_create_clients = 1
+                    ))
+                )',
+                [$actorId, $actorId, $actorId],
+            ];
+        }
+
+        return [
+            'c.user_id = ? AND EXISTS (
+                SELECT 1 FROM user_server_access own_access
+                WHERE own_access.user_id = ?
+                  AND own_access.server_id = c.server_id
+                  AND own_access.can_view = 1
+            )',
+            [$actorId, $actorId],
+        ];
+    }
+
     /**
      * Revoke client access (disable without deleting)
      */
