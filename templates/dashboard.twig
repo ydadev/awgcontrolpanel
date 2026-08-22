@@ -69,6 +69,108 @@
         </div>
     </div>
 
+    {% if connection_form.owners|length > 0 %}
+    <div class="bg-white rounded-lg shadow mb-8 overflow-hidden">
+        <div class="px-4 sm:px-6 py-4 border-b border-gray-200">
+            <h2 class="text-xl font-bold text-gray-900">
+                <i class="fas fa-plus-circle text-green-600 mr-1"></i>
+                Создать подключение
+            </h2>
+        </div>
+        <form method="POST" class="p-4 sm:p-6" id="dashboardCreateConnectionForm" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="return_to" value="/dashboard">
+
+            {% if create_error %}
+            <div class="mb-5 px-4 py-3 border border-red-200 bg-red-50 text-red-700 rounded" role="alert">
+                {{ create_error }}
+            </div>
+            {% endif %}
+
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4">
+                <div class="xl:col-span-5">
+                    <label for="dashboardConnectionOwner" class="block text-sm text-gray-600 mb-1">Владелец подключения</label>
+                    <select name="user_id" required class="w-full px-3 py-2 border rounded bg-white" id="dashboardConnectionOwner">
+                        {% for account in connection_form.owners %}
+                        <option value="{{ account.id }}" {% if account.id == connection_form.selected_owner_id %}selected{% endif %}>
+                            {{ account.name|default(account.email) }} &lt;{{ account.email }}&gt;{% if account.role == 'admin' %} - админ{% elseif account.role == 'moderator' %} - модератор{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="xl:col-span-3">
+                    <label for="dashboardConnectionServer" class="block text-sm text-gray-600 mb-1">Сервер</label>
+                    <select required class="w-full px-3 py-2 border rounded bg-white" id="dashboardConnectionServer"></select>
+                </div>
+                <div class="xl:col-span-4">
+                    <label for="dashboardConnectionProtocol" class="block text-sm text-gray-600 mb-1">Тип протокола</label>
+                    <select name="protocol_id" required class="w-full px-3 py-2 border rounded bg-white" id="dashboardConnectionProtocol"></select>
+                </div>
+
+                <div class="md:col-span-2 xl:col-span-5">
+                    <label for="dashboardClientName" class="block text-sm text-gray-600 mb-1">Название подключения</label>
+                    <input name="name" type="text" placeholder="Например: work_laptop" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" autocomplete="off" class="w-full px-3 py-2 border rounded" id="dashboardClientName" aria-describedby="dashboardClientNameHint dashboardClientNameError">
+                    <p id="dashboardClientNameHint" class="mt-1 text-xs text-gray-500">Латинские буквы, цифры, «_» и «-». Первый символ — буква или цифра.</p>
+                    <p id="dashboardClientNameError" class="mt-1 text-sm text-red-600 hidden" role="alert">Название подключения должно содержать от 1 до 64 символов: латинские буквы, цифры, «_» или «-». Первый символ должен быть буквой или цифрой.</p>
+                </div>
+                <div class="xl:col-span-3">
+                    <label for="dashboardExpirationSelect" class="block text-sm text-gray-600 mb-1">Срок действия</label>
+                    <select name="expires_in_days" class="w-full px-3 py-2 border rounded bg-white" id="dashboardExpirationSelect">
+                        <option value="" selected>Бессрочно</option>
+                        <option value="7">7 дней</option>
+                        <option value="30">30 дней</option>
+                        <option value="60">60 дней</option>
+                        <option value="90">90 дней</option>
+                        <option value="180">180 дней</option>
+                        <option value="365">365 дней</option>
+                        <option value="custom">Указать в секундах</option>
+                    </select>
+                    <input type="number" name="expires_in_seconds" id="dashboardExpirationSeconds" class="w-full px-3 py-2 border rounded mt-2 hidden" placeholder="Количество секунд" min="1" disabled>
+                </div>
+                <div class="xl:col-span-4">
+                    <label for="dashboardTrafficSelect" class="block text-sm text-gray-600 mb-1">Лимит трафика</label>
+                    <select name="traffic_limit_gb" class="w-full px-3 py-2 border rounded bg-white" id="dashboardTrafficSelect">
+                        <option value="" selected>Безлимитно</option>
+                        <option value="1">1 GB</option>
+                        <option value="5">5 GB</option>
+                        <option value="10">10 GB</option>
+                        <option value="25">25 GB</option>
+                        <option value="50">50 GB</option>
+                        <option value="100">100 GB</option>
+                        <option value="250">250 GB</option>
+                        <option value="500">500 GB</option>
+                        <option value="1000">1000 GB (1 TB)</option>
+                        <option value="custom">Указать в MB</option>
+                    </select>
+                    <input type="number" name="traffic_limit_mb" id="dashboardTrafficMegabytes" class="w-full px-3 py-2 border rounded mt-2 hidden" placeholder="Количество мегабайт" min="1" disabled>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 mt-5 items-stretch">
+                <label class="xl:col-span-4 flex items-start gap-3 p-3 border rounded bg-gray-50 cursor-pointer">
+                    <input type="checkbox" name="send_email" value="1" class="mt-1 h-4 w-4">
+                    <span>
+                        <span class="block text-sm font-medium text-gray-800">Отправить на почту</span>
+                        <span class="block text-xs text-gray-500">QR-коды и файл конфигурации будут отправлены владельцу.</span>
+                    </span>
+                </label>
+                <label class="xl:col-span-5 flex items-start gap-3 p-3 border rounded bg-gray-50 cursor-pointer hidden" id="dashboardLocalNetworkBypassOption">
+                    <input type="checkbox" name="local_network_bypass" value="1" class="mt-1 h-4 w-4" id="dashboardLocalNetworkBypass" disabled>
+                    <span>
+                        <span class="block text-sm font-medium text-gray-800">Обход VPN для локальных сетей</span>
+                        <span class="block text-xs text-gray-500">Применить настроенный список AllowedIPs для выбранного сервера.</span>
+                    </span>
+                </label>
+                <button type="submit" class="xl:col-span-3 gradient-bg text-white px-5 py-3 rounded min-h-[66px] disabled:opacity-60 disabled:cursor-not-allowed" id="dashboardCreateClientBtn" disabled>
+                    <span id="dashboardCreateClientText"><i class="fas fa-plus mr-1"></i> Создать подключение</span>
+                    <i class="fas fa-spinner fa-spin hidden" id="dashboardCreateClientSpinner"></i>
+                </button>
+            </div>
+        </form>
+        <script type="application/json" id="dashboardConnectionOptions">{{ connection_form.options_json|raw }}</script>
+    </div>
+    {% endif %}
+
     <div class="bg-white rounded-lg shadow overflow-hidden">
         <div class="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <h2 class="text-xl font-bold text-gray-900 whitespace-nowrap">
@@ -256,6 +358,101 @@
 
 {% block scripts %}
 <script>
+const dashboardConnectionForm = document.getElementById('dashboardCreateConnectionForm');
+if (dashboardConnectionForm) {
+    const dashboardConnectionOwners = JSON.parse(document.getElementById('dashboardConnectionOptions').textContent || '[]');
+    const dashboardOwnerSelect = document.getElementById('dashboardConnectionOwner');
+    const dashboardServerSelect = document.getElementById('dashboardConnectionServer');
+    const dashboardProtocolSelect = document.getElementById('dashboardConnectionProtocol');
+    const dashboardNameInput = document.getElementById('dashboardClientName');
+    const dashboardNameError = document.getElementById('dashboardClientNameError');
+    const dashboardBypassOption = document.getElementById('dashboardLocalNetworkBypassOption');
+    const dashboardBypassCheckbox = document.getElementById('dashboardLocalNetworkBypass');
+    const dashboardSubmitButton = document.getElementById('dashboardCreateClientBtn');
+    const dashboardSubmitText = document.getElementById('dashboardCreateClientText');
+    const dashboardSubmitSpinner = document.getElementById('dashboardCreateClientSpinner');
+
+    const selectedDashboardOwner = () => dashboardConnectionOwners.find(owner => String(owner.id) === dashboardOwnerSelect.value);
+    const selectedDashboardServer = () => {
+        const owner = selectedDashboardOwner();
+        return owner ? owner.servers.find(server => String(server.id) === dashboardServerSelect.value) : null;
+    };
+
+    function addDashboardOption(select, value, label, data = {}) {
+        const option = document.createElement('option');
+        option.value = String(value);
+        option.textContent = label;
+        Object.entries(data).forEach(([key, item]) => option.dataset[key] = String(item));
+        select.appendChild(option);
+    }
+
+    function updateDashboardBypassOption() {
+        const server = selectedDashboardServer();
+        const protocol = server ? server.protocols.find(item => String(item.id) === dashboardProtocolSelect.value) : null;
+        const enabled = Boolean(server && server.local_bypass_enabled && protocol && protocol.wireguard);
+        dashboardBypassOption.classList.toggle('hidden', !enabled);
+        dashboardBypassCheckbox.disabled = !enabled;
+        dashboardBypassCheckbox.checked = enabled;
+    }
+
+    function populateDashboardProtocols() {
+        dashboardProtocolSelect.replaceChildren();
+        const server = selectedDashboardServer();
+        (server ? server.protocols : []).forEach(protocol => {
+            addDashboardOption(dashboardProtocolSelect, protocol.id, protocol.name, {wireguard: protocol.wireguard ? '1' : '0'});
+        });
+        updateDashboardBypassOption();
+        dashboardSubmitButton.disabled = !server || dashboardProtocolSelect.options.length === 0;
+        dashboardConnectionForm.action = server ? `/servers/${encodeURIComponent(server.id)}/clients/create` : '';
+    }
+
+    function populateDashboardServers() {
+        dashboardServerSelect.replaceChildren();
+        const owner = selectedDashboardOwner();
+        (owner ? owner.servers : []).forEach(server => addDashboardOption(dashboardServerSelect, server.id, server.name));
+        populateDashboardProtocols();
+    }
+
+    function toggleDashboardCustomInput(selectId, inputId) {
+        const select = document.getElementById(selectId);
+        const input = document.getElementById(inputId);
+        const custom = select.value === 'custom';
+        input.classList.toggle('hidden', !custom);
+        input.disabled = !custom;
+        input.required = custom;
+        if (!custom) input.value = '';
+    }
+
+    dashboardOwnerSelect.addEventListener('change', populateDashboardServers);
+    dashboardServerSelect.addEventListener('change', populateDashboardProtocols);
+    dashboardProtocolSelect.addEventListener('change', updateDashboardBypassOption);
+    document.getElementById('dashboardExpirationSelect').addEventListener('change', () => toggleDashboardCustomInput('dashboardExpirationSelect', 'dashboardExpirationSeconds'));
+    document.getElementById('dashboardTrafficSelect').addEventListener('change', () => toggleDashboardCustomInput('dashboardTrafficSelect', 'dashboardTrafficMegabytes'));
+    dashboardNameInput.addEventListener('input', () => {
+        dashboardNameInput.setCustomValidity('');
+        dashboardNameError.classList.add('hidden');
+    });
+    dashboardConnectionForm.addEventListener('submit', event => {
+        const validName = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(dashboardNameInput.value);
+        if (!validName) {
+            event.preventDefault();
+            dashboardNameInput.setCustomValidity(dashboardNameError.textContent.trim());
+            dashboardNameError.classList.remove('hidden');
+            dashboardNameInput.reportValidity();
+            return;
+        }
+        if (!selectedDashboardServer() || !dashboardProtocolSelect.value) {
+            event.preventDefault();
+            return;
+        }
+        dashboardSubmitButton.disabled = true;
+        dashboardSubmitText.classList.add('hidden');
+        dashboardSubmitSpinner.classList.remove('hidden');
+    });
+
+    populateDashboardServers();
+}
+
 const dashboardClientCharts = {};
 let dashboardSpeedUpdateInProgress = false;
 

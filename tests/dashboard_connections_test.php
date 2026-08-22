@@ -62,10 +62,35 @@ foreach (['$sortColumns', "['20', '50', 'all']", 'array_key_exists($sort, $sortC
         failDashboardConnectionsTest('Dashboard query validation omits: ' . $required);
     }
 }
+foreach (['dashboardConnectionFormData($user)', "'connection_form' => \$connectionForm", "(string) (\$_POST['return_to'] ?? '') === '/dashboard'", "Csrf::validate(\$_POST['csrf_token'] ?? null)", 'userCanCreateClients($user, $serverId)', 'resolveConnectionOwnerForCreate($user, $serverId)', 'Selected protocol is not installed on this server'] as $required) {
+    if (!str_contains($routeSource, $required)) {
+        failDashboardConnectionsTest('Dashboard connection creation route omits: ' . $required);
+    }
+}
+foreach (['public static function dashboardConnectionFormData', 'actor_access.can_create_clients = 1', 'UserRolePolicy::canProvisionConnectionFor', '$targetCanView', 'ClientAllowedIpsPolicy::isServerEnabled', 'JSON_HEX_TAG'] as $required) {
+    if (!str_contains($clientSource, $required)) {
+        failDashboardConnectionsTest('Dashboard connection form security omits: ' . $required);
+    }
+}
 foreach (['name="connections_search"', 'connections_page=', 'connections.items', 'w-full max-w-none', "sortable_header('Сервер'", "sortable_header('Срок'", "sortable_header('Лимит'", "sortable_header('Скорость'", "'all': 'Все'"] as $required) {
     if (!str_contains($template, $required)) {
         failDashboardConnectionsTest('Dashboard template omits: ' . $required);
     }
+}
+foreach (['id="dashboardCreateConnectionForm"', 'id="dashboardConnectionOwner"', 'id="dashboardConnectionServer"', 'id="dashboardConnectionProtocol"', 'name="csrf_token" value="{{ csrf_token }}"', 'name="return_to" value="/dashboard"', 'populateDashboardServers', 'populateDashboardProtocols'] as $required) {
+    if (!str_contains($template, $required)) {
+        failDashboardConnectionsTest('Dashboard connection form omits: ' . $required);
+    }
+}
+$createBlockPosition = strpos($template, 'id="dashboardCreateConnectionForm"');
+$connectionsBlockPosition = strpos($template, 'Подключения ({{ connections.total_filtered');
+if ($createBlockPosition === false || $connectionsBlockPosition === false || $createBlockPosition >= $connectionsBlockPosition) {
+    failDashboardConnectionsTest('Dashboard connection form is not placed before the connections table');
+}
+$ownerPosition = strpos($template, 'id="dashboardConnectionOwner"');
+$serverPosition = strpos($template, 'id="dashboardConnectionServer"');
+if ($ownerPosition === false || $serverPosition === false || $ownerPosition >= $serverPosition) {
+    failDashboardConnectionsTest('Dashboard form does not select the owner before the server');
 }
 foreach (['dashboardClientSparkline-', '/api/clients/${clientId}/metrics?hours=24&max_points=120', 'prepareDashboardSparklineSeries', 'rows.slice(index, index + 6)', 'setInterval(updateDashboardClientSpeeds, 30000)'] as $required) {
     if (!str_contains($template, $required)) {

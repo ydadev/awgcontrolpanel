@@ -292,6 +292,15 @@ function resolveConnectionOwnerForCreate(array $currentUser, int $serverId): arr
     return resolveConnectionOwnerForCreateById($currentUser, $serverId, (int) ($_POST['user_id'] ?? 0));
 }
 
+function redirectConnectionCreateError(int $serverId, string $message): void
+{
+    if ((string) ($_POST['return_to'] ?? '') === '/dashboard') {
+        redirect('/dashboard?create_error=' . urlencode($message));
+        return;
+    }
+    redirect('/servers/' . $serverId . '?error=' . urlencode($message));
+}
+
 function userCanAccessClient(array $user, array $clientData): bool
 {
     if (($user['role'] ?? '') === 'admin') {
@@ -595,6 +604,7 @@ Router::get('/dashboard', function () {
         $connectionSort,
         $connectionDirection
     );
+    $connectionForm = VpnClient::dashboardConnectionFormData($user);
 
     $totalOnline = (int) $connections['online_visible'];
     $onlineUsers = [];
@@ -607,6 +617,8 @@ Router::get('/dashboard', function () {
     View::render('dashboard.twig', [
         'servers' => $servers,
         'connections' => $connections,
+        'connection_form' => $connectionForm,
+        'create_error' => trim((string) ($_GET['create_error'] ?? '')),
         'online_count' => $totalOnline,
         'online_users' => $onlineUsers,
     ]);
@@ -1409,6 +1421,11 @@ Router::post('/servers/{id}/delete', function ($params) {
 Router::post('/servers/{id}/clients/create', function ($params) {
     requireAuth();
     $serverId = (int) $params['id'];
+    if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo 'Forbidden: invalid CSRF token';
+        return;
+    }
     $clientName = (string) ($_POST['name'] ?? '');
     $username = isset($_POST['username']) ? trim($_POST['username']) : '';
 
@@ -1434,7 +1451,7 @@ Router::post('/servers/{id}/clients/create', function ($params) {
     try {
         $clientName = VpnClient::validateConnectionName($clientName);
     } catch (InvalidArgumentException $e) {
-        redirect('/servers/' . $serverId . '?error=' . urlencode($e->getMessage()));
+        redirectConnectionCreateError($serverId, $e->getMessage());
         return;
     }
 
@@ -1453,15 +1470,11 @@ Router::post('/servers/{id}/clients/create', function ($params) {
 
         $protocolId = isset($_POST['protocol_id']) && $_POST['protocol_id'] !== '' ? (int) $_POST['protocol_id'] : null;
         if ($protocolId) {
-            try {
-                $pdo = DB::conn();
-                $chk = $pdo->prepare('SELECT 1 FROM server_protocols WHERE server_id = ? AND protocol_id = ?');
-                $chk->execute([$serverId, $protocolId]);
-                if (!$chk->fetchColumn()) {
-                    $protocolId = null;
-                }
-            } catch (Exception $e) {
-                $protocolId = null;
+            $pdo = DB::conn();
+            $chk = $pdo->prepare('SELECT 1 FROM server_protocols WHERE server_id = ? AND protocol_id = ?');
+            $chk->execute([$serverId, $protocolId]);
+            if (!$chk->fetchColumn()) {
+                throw new Exception('Selected protocol is not installed on this server');
             }
         }
         $allowedIpsMode = !empty($_POST['local_network_bypass'])
@@ -1495,7 +1508,7 @@ Router::post('/servers/{id}/clients/create', function ($params) {
 
         redirect('/clients/' . $clientId);
     } catch (Exception $e) {
-        redirect('/servers/' . $serverId . '?error=' . urlencode($e->getMessage()));
+        redirectConnectionCreateError($serverId, $e->getMessage());
     }
 });
 

@@ -226,6 +226,7 @@
     <div class="bg-white rounded shadow p-6">
       <h3 class="font-bold mb-4">Создать подключение</h3>
       <form method="POST" action="/servers/{{ server.id }}/clients/create" class="space-y-3" id="createClientForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div>
           <label class="block text-sm text-gray-600 mb-1">Владелец подключения</label>
           {% if user.role in ['admin', 'moderator'] %}

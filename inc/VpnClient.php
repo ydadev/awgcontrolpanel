@@ -2055,6 +2055,120 @@ class VpnClient
         return $stmt->fetchAll();
     }
 
+    public static function dashboardConnectionFormData(array $actor): array
+    {
+        $pdo = DB::conn();
+        $actorId = (int) ($actor['id'] ?? 0);
+        $actorRole = (string) ($actor['role'] ?? 'user');
+
+        if ($actorRole === UserRolePolicy::ADMIN) {
+            $serverStmt = $pdo->query('
+                SELECT id, name, status
+                FROM vpn_servers
+                WHERE status = "active"
+                ORDER BY name ASC
+            ');
+        } else {
+            $serverStmt = $pdo->prepare('
+                SELECT s.id, s.name, s.status
+                FROM vpn_servers s
+                JOIN user_server_access actor_access
+                  ON actor_access.server_id = s.id
+                 AND actor_access.user_id = ?
+                 AND actor_access.can_view = 1
+                 AND actor_access.can_create_clients = 1
+                WHERE s.status = "active"
+                ORDER BY s.name ASC
+            ');
+            $serverStmt->execute([$actorId]);
+        }
+        $servers = $serverStmt->fetchAll();
+
+        $serversById = [];
+        $serverIds = [];
+        foreach ($servers as $server) {
+            $serverId = (int) $server['id'];
+            $serverIds[] = $serverId;
+            $serversById[$serverId] = [
+                'id' => $serverId,
+                'name' => (string) $server['name'],
+                'local_bypass_enabled' => ClientAllowedIpsPolicy::isServerEnabled($serverId),
+                'protocols' => [],
+            ];
+        }
+
+        if ($serverIds) {
+            $placeholders = implode(',', array_fill(0, count($serverIds), '?'));
+            $protocolStmt = $pdo->prepare('
+                SELECT sp.server_id, p.id AS protocol_id, p.name, p.slug
+                FROM server_protocols sp
+                JOIN protocols p ON p.id = sp.protocol_id
+                WHERE sp.server_id IN (' . $placeholders . ')
+                ORDER BY p.name ASC
+            ');
+            $protocolStmt->execute($serverIds);
+            foreach ($protocolStmt->fetchAll() as $protocol) {
+                $serverId = (int) $protocol['server_id'];
+                if (!isset($serversById[$serverId])) {
+                    continue;
+                }
+                $slug = strtolower(trim((string) $protocol['slug']));
+                $serversById[$serverId]['protocols'][] = [
+                    'id' => (int) $protocol['protocol_id'],
+                    'name' => (string) $protocol['name'],
+                    'slug' => $slug,
+                    'wireguard' => in_array($slug, ['wireguard-standard', 'amnezia-wg', 'amnezia-wg-advanced', 'awg2'], true),
+                ];
+            }
+        }
+
+        $userStmt = $pdo->prepare('
+            SELECT id, email, name, role
+            FROM users
+            ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, name ASC, email ASC
+        ');
+        $userStmt->execute([$actorId]);
+        $accessMap = UserServerAccess::mapForUsers();
+        $owners = [];
+
+        foreach ($userStmt->fetchAll() as $target) {
+            $targetId = (int) $target['id'];
+            $targetRole = (string) ($target['role'] ?? 'user');
+            if (!UserRolePolicy::canProvisionConnectionFor($actorRole, $targetRole, $targetId === $actorId)) {
+                continue;
+            }
+
+            $availableServers = [];
+            foreach ($serversById as $serverId => $server) {
+                $targetCanView = $targetRole === UserRolePolicy::ADMIN
+                    || (int) ($accessMap[$targetId][$serverId]['can_view'] ?? 0) === 1;
+                if ($targetCanView && $server['protocols']) {
+                    $availableServers[] = $server;
+                }
+            }
+            if (!$availableServers) {
+                continue;
+            }
+
+            $owners[] = [
+                'id' => $targetId,
+                'email' => (string) ($target['email'] ?? ''),
+                'name' => (string) ($target['name'] ?? ''),
+                'role' => $targetRole,
+                'servers' => $availableServers,
+            ];
+        }
+
+        return [
+            'owners' => $owners,
+            'selected_owner_id' => $owners ? (int) $owners[0]['id'] : null,
+            'options_json' => json_encode(
+                $owners,
+                JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+            ) ?: '[]',
+        ];
+    }
+
     public static function dashboardPage(
         array $actor,
         string $search = '',
