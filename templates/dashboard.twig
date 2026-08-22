@@ -188,8 +188,15 @@
                             {% endif %}
                         </td>
                         <td class="px-4 py-3 text-xs font-mono whitespace-nowrap">
-                            <div class="text-green-600">↑{{ ((client.speed_up|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
-                            <div class="text-blue-600">↓{{ ((client.speed_down|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+                            <div class="flex flex-col items-center" style="width: 120px; max-width: 120px;">
+                                <div style="height: 30px; width: 100%;">
+                                    <canvas id="dashboardClientSparkline-{{ client.id }}" aria-label="График скорости за 24 часа"></canvas>
+                                </div>
+                                <div id="dashboard-client-speed-{{ client.id }}" class="text-[10px] mt-1 text-center leading-tight">
+                                    <div class="text-green-600">↑{{ ((client.speed_up|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+                                    <div class="text-blue-600">↓{{ ((client.speed_down|default(0) * 8) / 1000000)|number_format(2) }} Mbit</div>
+                                </div>
+                            </div>
                         </td>
                         <td class="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
                             {% if client.last_handshake %}
@@ -245,4 +252,102 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dashboardClientCharts = {};
+let dashboardSpeedUpdateInProgress = false;
+
+function prepareDashboardSparklineSeries(values) {
+    const cleaned = values.map(value => {
+        const number = Number(value);
+        return Number.isFinite(number) && number > 0 ? number : 0;
+    });
+    const nonZero = cleaned.filter(value => value > 0).sort((a, b) => a - b);
+    let capped = cleaned;
+    if (nonZero.length >= 5) {
+        const p95 = nonZero[Math.floor((nonZero.length - 1) * 0.95)] || 0;
+        const cap = p95 > 0 ? p95 * 2 : 0;
+        if (cap > 0) {
+            capped = cleaned.map(value => Math.min(value, cap));
+        }
+    }
+    return capped.map((_, index, series) => {
+        const from = Math.max(0, index - 1);
+        const to = Math.min(series.length - 1, index + 1);
+        let sum = 0;
+        for (let point = from; point <= to; point++) sum += series[point];
+        return sum / (to - from + 1);
+    });
+}
+
+async function updateDashboardClientSpeed(row) {
+    const clientId = row.dataset.clientId;
+    const canvas = document.getElementById(`dashboardClientSparkline-${clientId}`);
+    try {
+        const response = await fetch(`/api/clients/${clientId}/metrics?hours=24`, {credentials: 'same-origin'});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const metrics = data.success && Array.isArray(data.metrics) ? data.metrics : [];
+        if (canvas) {
+            const labels = metrics.map((_, index) => index);
+            const upload = prepareDashboardSparklineSeries(metrics.map(metric => parseFloat(metric.speed_up_kbps) / 1000));
+            const download = prepareDashboardSparklineSeries(metrics.map(metric => parseFloat(metric.speed_down_kbps) / 1000));
+            if (dashboardClientCharts[clientId]) {
+                dashboardClientCharts[clientId].data.labels = labels;
+                dashboardClientCharts[clientId].data.datasets[0].data = upload;
+                dashboardClientCharts[clientId].data.datasets[1].data = download;
+                dashboardClientCharts[clientId].update('none');
+            } else {
+                dashboardClientCharts[clientId] = new Chart(canvas, {
+                    type: 'line',
+                    data: {labels, datasets: [
+                        {label: 'Up', data: upload, borderColor: '#16a34a', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.4},
+                        {label: 'Down', data: download, borderColor: '#2563eb', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.4}
+                    ]},
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {legend: {display: false}, tooltip: {enabled: false}},
+                        scales: {x: {display: false}, y: {display: false, beginAtZero: true}},
+                        animation: false
+                    }
+                });
+            }
+        }
+        if (metrics.length > 0) {
+            const latest = metrics[metrics.length - 1];
+            row.innerHTML = `<div class="text-green-600 whitespace-nowrap">↑${(parseFloat(latest.speed_up_kbps) / 1000).toFixed(2)} Mbit</div><div class="text-blue-600 whitespace-nowrap">↓${(parseFloat(latest.speed_down_kbps) / 1000).toFixed(2)} Mbit</div>`;
+        } else {
+            row.innerHTML = '<span class="text-gray-400">-</span>';
+        }
+    } catch (error) {
+        console.error(`Failed to fetch dashboard metrics for client ${clientId}:`, error);
+        row.innerHTML = '<span class="text-gray-400">-</span>';
+    }
+}
+
+async function updateDashboardClientSpeeds() {
+    if (dashboardSpeedUpdateInProgress) return;
+    dashboardSpeedUpdateInProgress = true;
+    const rows = Array.from(document.querySelectorAll('[data-dashboard-client-speed]'));
+    try {
+        for (let index = 0; index < rows.length; index += 6) {
+            await Promise.all(rows.slice(index, index + 6).map(updateDashboardClientSpeed));
+        }
+    } finally {
+        dashboardSpeedUpdateInProgress = false;
+    }
+}
+
+document.querySelectorAll('[id^="dashboard-client-speed-"]').forEach(row => {
+    row.dataset.clientId = row.id.replace('dashboard-client-speed-', '');
+    row.dataset.dashboardClientSpeed = '1';
+});
+if (document.querySelector('[data-dashboard-client-speed]')) {
+    updateDashboardClientSpeeds();
+    setInterval(updateDashboardClientSpeeds, 30000);
+}
+</script>
 {% endblock %}

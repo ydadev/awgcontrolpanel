@@ -61,6 +61,11 @@ foreach (['name="connections_search"', 'connections_page=', 'connections.items',
         failDashboardConnectionsTest('Dashboard template omits: ' . $required);
     }
 }
+foreach (['dashboardClientSparkline-', '/api/clients/${clientId}/metrics?hours=24', 'prepareDashboardSparklineSeries', 'rows.slice(index, index + 6)', 'setInterval(updateDashboardClientSpeeds, 30000)'] as $required) {
+    if (!str_contains($template, $required)) {
+        failDashboardConnectionsTest('Dashboard speed chart omits: ' . $required);
+    }
+}
 if (str_contains($template, "t('dashboard.recent_servers')")) {
     failDashboardConnectionsTest('Recent servers block is still rendered');
 }
