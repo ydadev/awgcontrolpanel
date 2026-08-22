@@ -110,6 +110,40 @@ final class ClientAllowedIpsPolicy
         return implode(', ', $entries);
     }
 
+    public static function allowedIpsForEndpointAndDns(string $mode, string $endpoint, string $dnsServers): string
+    {
+        $allowedIps = self::allowedIpsForEndpoint($mode, $endpoint);
+        if (self::normalizeMode($mode) !== self::MODE_LOCAL_BYPASS) {
+            return $allowedIps;
+        }
+
+        $entries = array_values(array_filter(array_map('trim', explode(',', $allowedIps))));
+        foreach (preg_split('/[\s,]+/', trim($dnsServers), -1, PREG_SPLIT_NO_EMPTY) ?: [] as $dnsServer) {
+            $packed = @inet_pton($dnsServer);
+            if ($packed === false || strlen($packed) !== 4 || trim($dnsServer) === trim($endpoint)) {
+                continue;
+            }
+            $address = unpack('N', $packed)[1];
+            $covered = false;
+            foreach ($entries as $entry) {
+                if (strpos($entry, ':') !== false) {
+                    continue;
+                }
+                $network = self::parseIpv4Cidr($entry);
+                $size = 1 << (32 - $network['prefix']);
+                if ($address >= $network['start'] && $address < $network['start'] + $size) {
+                    $covered = true;
+                    break;
+                }
+            }
+            if (!$covered) {
+                $entries[] = $dnsServer . '/32';
+            }
+        }
+
+        return implode(', ', $entries);
+    }
+
     public static function get(): array
     {
         if (self::$cachedSettings !== null) {

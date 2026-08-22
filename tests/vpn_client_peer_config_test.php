@@ -106,6 +106,27 @@ if (!str_contains($splitConfig, 'AllowedIPs = 0.0.0.0/5')) {
     exit(1);
 }
 
+$internalDnsConfig = preg_replace(
+    '/^DNS\s*=.*$/mi',
+    'DNS = 10.254.0.53',
+    $clientConfig,
+    1
+);
+$internalDnsSplitConfig = $allowedIpsMethod->invoke(
+    null,
+    $internalDnsConfig,
+    ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS,
+    '203.0.113.10'
+);
+if (!str_contains($internalDnsSplitConfig, 'DNS = 10.254.0.53')) {
+    fwrite(STDERR, "Internal DNS setting was changed while applying local-bypass mode\n");
+    exit(1);
+}
+if (!str_contains($internalDnsSplitConfig, '10.254.0.53/32')) {
+    fwrite(STDERR, "Internal DNS route was not appended to local-bypass config\n");
+    exit(1);
+}
+
 $fullConfig = $allowedIpsMethod->invoke(null, $splitConfig, ClientAllowedIpsPolicy::MODE_FULL);
 if (!str_contains($fullConfig, 'AllowedIPs = 0.0.0.0/0, ::/0')) {
     fwrite(STDERR, "Full-tunnel mode did not restore the default AllowedIPs\n");

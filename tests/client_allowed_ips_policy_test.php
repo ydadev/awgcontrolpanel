@@ -85,6 +85,27 @@ if (!$fraMatched) {
     failAllowedIpsTest('Unrelated server endpoint was excluded from the client config');
 }
 
+$withInternalDns = ClientAllowedIpsPolicy::allowedIpsForEndpointAndDns(
+    ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS,
+    '203.0.113.10',
+    '10.254.0.53'
+);
+if (!str_contains($withInternalDns, '10.254.0.53/32')) {
+    failAllowedIpsTest('Internal DNS host route was not added to local-bypass AllowedIPs');
+}
+if (str_contains($withInternalDns, '203.0.113.10/32')) {
+    failAllowedIpsTest('Endpoint exclusion was undone while adding the internal DNS route');
+}
+
+$withPublicDns = ClientAllowedIpsPolicy::allowedIpsForEndpointAndDns(
+    ClientAllowedIpsPolicy::MODE_LOCAL_BYPASS,
+    '203.0.113.10',
+    '1.1.1.1, 8.8.8.8'
+);
+if (str_contains($withPublicDns, '1.1.1.1/32') || str_contains($withPublicDns, '8.8.8.8/32')) {
+    failAllowedIpsTest('Already covered public DNS addresses were appended to AllowedIPs');
+}
+
 foreach (['fc00::/7', 'fe80::/10', 'ff00::/8'] as $excludedIpv6) {
     if (in_array($excludedIpv6, $entries, true)) {
         failAllowedIpsTest('Excluded IPv6 range is present: ' . $excludedIpv6);
