@@ -418,7 +418,8 @@ class VpnServer
     public function testConnection(): bool
     {
         // Determine auth method
-        $sshOptions = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=10';
+        $sshOptions = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=10'
+            . ' -o ConnectionAttempts=1 -o ServerAliveInterval=5 -o ServerAliveCountMax=2';
         $credentials = '';
         $keyFile = '';
 
@@ -431,7 +432,7 @@ class VpnServer
             $baseCmd = "ssh -p %d %s %s@%s";
 
             $testCommand = sprintf(
-                "ssh -p %d %s %s@%s 'echo test' 2>/dev/null",
+                "timeout --signal=TERM --kill-after=5s 15s ssh -p %d %s %s@%s 'echo test' 2>/dev/null",
                 $this->data['port'],
                 $sshOptions,
                 $this->data['username'],
@@ -440,7 +441,7 @@ class VpnServer
         } else {
             $sshOptions .= " -o PreferredAuthentications=password -o PubkeyAuthentication=no";
             $testCommand = sprintf(
-                "sshpass -p %s ssh -p %d %s %s@%s 'echo test' 2>/dev/null",
+                "timeout --signal=TERM --kill-after=5s 15s sshpass -p %s ssh -p %d %s %s@%s 'echo test' 2>/dev/null",
                 escapeshellarg($this->data['password']),
                 $this->data['port'],
                 $sshOptions,
@@ -449,7 +450,7 @@ class VpnServer
             );
         }
 
-        $result = shell_exec($testCommand);
+        $result = shell_exec($testCommand) ?? '';
 
         if ($keyFile && file_exists($keyFile)) {
             unlink($keyFile);
@@ -480,7 +481,8 @@ class VpnServer
         $needsSudo = false;
 
         // Determine auth method
-        $sshOptions = '-o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no';
+        $sshOptions = '-o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
+            . ' -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=5 -o ServerAliveCountMax=2';
         $keyFile = '';
 
         if (!empty($this->data['ssh_key'])) {
@@ -493,7 +495,7 @@ class VpnServer
             $escapedCommand = escapeshellarg($preparedCommand);
 
             $sshCommand = sprintf(
-                "ssh -p %d %s %s@%s %s 2>&1",
+                "timeout --signal=TERM --kill-after=5s 45s ssh -p %d %s %s@%s %s 2>&1",
                 $this->data['port'],
                 $sshOptions,
                 $this->data['username'],
@@ -515,7 +517,7 @@ class VpnServer
 
             $sshOptions .= " -o PreferredAuthentications=password -o PubkeyAuthentication=no";
             $sshCommand = sprintf(
-                "sshpass -p %s ssh -p %d %s %s@%s %s 2>&1",
+                "timeout --signal=TERM --kill-after=5s 45s sshpass -p %s ssh -p %d %s %s@%s %s 2>&1",
                 escapeshellarg($this->data['password']),
                 $this->data['port'],
                 $sshOptions,
@@ -541,7 +543,7 @@ class VpnServer
             
             $escapedBaseCommand = escapeshellarg($pathPrefix . $baseCommand);
             $sshCommandNoSudo = sprintf(
-                "sshpass -p %s ssh -p %d %s %s@%s %s 2>&1",
+                "timeout --signal=TERM --kill-after=5s 45s sshpass -p %s ssh -p %d %s %s@%s %s 2>&1",
                 escapeshellarg($this->data['password']),
                 $this->data['port'],
                 $sshOptions,

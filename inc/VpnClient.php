@@ -59,6 +59,9 @@ class VpnClient
         if (!$serverData || $serverData['status'] !== 'active') {
             throw new Exception('Server is not active');
         }
+        if (!$server->testConnection()) {
+            throw new Exception('Не удалось подключиться к VPN-серверу по SSH. Проверьте доступность сервера и повторите попытку.');
+        }
 
         // Determine protocol before sync
         $protoRow = null;
@@ -1888,7 +1891,7 @@ class VpnClient
         $run = static function (string $cmd) use ($serverData): string {
             $escapedCommand = escapeshellarg($cmd);
             $sshCommand = sprintf(
-                "sshpass -p %s ssh  -p %d -q -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no %s@%s %s 2>&1",
+                "timeout --signal=TERM --kill-after=5s 45s sshpass -p %s ssh -p %d -q -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o PreferredAuthentications=password -o PubkeyAuthentication=no %s@%s %s 2>&1",
                 escapeshellarg($serverData['password']),
                 $serverData['port'],
                 $serverData['username'],
