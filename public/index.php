@@ -938,10 +938,27 @@ Router::post('/servers/{id}/deploy', function ($params) {
 Router::post('/servers/{id}/protocols/uninstall-all', function ($params) {
     requireAdmin();
     header('Content-Type: application/json');
+    if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']);
+        return;
+    }
     $serverId = (int) $params['id'];
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
+        $confirmation = trim((string) ($_POST['confirm_server'] ?? ''));
+        if ($confirmation === '' || !hash_equals((string) $serverData['name'], $confirmation)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Server name confirmation does not match']);
+            return;
+        }
+        $actor = Auth::user();
+        Logger::appendInstall(
+            $serverId,
+            'UNINSTALL_ALL requested actor_user_id=' . (int) ($actor['id'] ?? 0)
+            . ' remote_addr=' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
         $pdo = DB::conn();
         $stmt = $pdo->prepare('SELECT p.* FROM server_protocols sp JOIN protocols p ON p.id = sp.protocol_id WHERE sp.server_id = ?');
         $stmt->execute([$serverId]);
@@ -972,12 +989,31 @@ Router::post('/servers/{id}/protocols/{slug}/uninstall', function ($params) {
     requireAdmin();
     header('Content-Type: application/json');
 
+    if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Invalid CSRF token']);
+        return;
+    }
+
     $serverId = (int) $params['id'];
     $slug = $params['slug'] ?? '';
+    $confirmation = trim((string) ($_POST['confirm_protocol'] ?? ''));
+    if ($slug === '' || $confirmation === '' || !hash_equals($slug, $confirmation)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Protocol confirmation does not match']);
+        return;
+    }
 
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
+        $actor = Auth::user();
+        Logger::appendInstall(
+            $serverId,
+            'UNINSTALL_PROTOCOL requested slug=' . $slug
+            . ' actor_user_id=' . (int) ($actor['id'] ?? 0)
+            . ' remote_addr=' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
 
         $protocol = InstallProtocolManager::getBySlug($slug);
         if (!$protocol) {

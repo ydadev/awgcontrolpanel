@@ -97,10 +97,7 @@
       </dl>
 
       {% if can_manage_server %}
-      <div class="mt-4 flex items-center gap-2">
-        <button type="button" id="uninstallAllBtn" class="px-3 py-1 bg-gray-600 text-white rounded text-sm">Удалить все протоколы</button>
-        <span id="uninstallMsg" class="ml-3 text-sm text-gray-600"></span>
-      </div>
+      <input type="hidden" id="serverCsrfToken" value="{{ csrf_token }}">
 
       <div class="mt-4">
         <label class="block text-sm text-gray-600 mb-1">Добавить протокол</label>
@@ -543,51 +540,7 @@ function toggleExpirationInput() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  const uninstallAllBtn = document.getElementById('uninstallAllBtn');
-  const msg = document.getElementById('uninstallMsg');
-
-  if (uninstallAllBtn) {
-    uninstallAllBtn.addEventListener('click', async function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!confirm('Удалить все Amnezia-контейнеры на сервере?')) return;
-
-      const origHTML = uninstallAllBtn.innerHTML;
-      uninstallAllBtn.disabled = true;
-      uninstallAllBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i>Удаление...';
-      uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-gray-600', 'bg-yellow-600');
-      uninstallAllBtn.style.cursor = 'wait';
-      msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;margin-top:4px;">' +
-        '<i class="fas fa-circle-notch fa-spin text-yellow-600"></i>' +
-        '<span style="color:#92400e;font-weight:500;">Удаление всех протоколов... Это может занять минуту</span></div>';
-
-      try {
-        const res = await fetch(`/servers/{{ server.id }}/protocols/uninstall-all`, { method: 'POST', credentials: 'same-origin' });
-        const data = await res.json();
-        if (data.success) {
-          uninstallAllBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Удалено';
-          uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-yellow-600', 'bg-green-600');
-          msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#d1fae5;border:1px solid #10b981;border-radius:6px;margin-top:4px;">' +
-            '<i class="fas fa-check-circle text-green-600"></i>' +
-            '<span style="color:#065f46;font-weight:500;">' + (data.message || 'Все протоколы удалены') + '</span></div>';
-          setTimeout(() => location.reload(), 1200);
-        } else {
-          uninstallAllBtn.innerHTML = origHTML;
-          uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-yellow-600', 'bg-gray-600');
-          msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fee2e2;border:1px solid #ef4444;border-radius:6px;margin-top:4px;">' +
-            '<i class="fas fa-exclamation-circle text-red-600"></i>' +
-            '<span style="color:#991b1b;">' + (data.error || 'Ошибка') + '</span></div>';
-        }
-      } catch (e) {
-        uninstallAllBtn.innerHTML = origHTML;
-        uninstallAllBtn.className = uninstallAllBtn.className.replace('bg-yellow-600', 'bg-gray-600');
-        msg.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fee2e2;border:1px solid #ef4444;border-radius:6px;margin-top:4px;">' +
-          '<i class="fas fa-exclamation-circle text-red-600"></i>' +
-          '<span style="color:#991b1b;">' + (e.message || 'Ошибка связи') + '</span></div>';
-      }
-      uninstallAllBtn.disabled = false;
-    });
-  }
+  const serverCsrfToken = document.getElementById('serverCsrfToken')?.value || '';
 
   const activateBtn = document.getElementById('activateProtocolBtn');
   if (activateBtn) {
@@ -629,6 +582,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const confirmed = await showConfirmModal('Удалить протокол и все его подключения?', 'Удаление протокола');
       if (!confirmed) return;
       const slug = btn.getAttribute('data-slug');
+      const typedSlug = window.prompt('Для подтверждения удаления введите: ' + slug, '');
+      if (typedSlug !== slug) return;
       const m = document.getElementById('uninstallSpMsg');
       const card = btn.closest('.border.rounded');
 
@@ -663,7 +618,12 @@ document.addEventListener('DOMContentLoaded', function() {
         '<span style="color:#92400e;font-weight:500;">Удаление <b>' + slug + '</b>... Это может занять до 30 секунд</span></div>';
 
       try {
-        const resp = await fetch('/servers/{{ server.id }}/protocols/' + encodeURIComponent(slug) + '/uninstall', { method: 'POST', credentials: 'same-origin' });
+        const resp = await fetch('/servers/{{ server.id }}/protocols/' + encodeURIComponent(slug) + '/uninstall', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ csrf_token: serverCsrfToken, confirm_protocol: slug }).toString()
+        });
         let data;
         const ct = resp.headers.get('content-type') || '';
         if (ct.includes('application/json')) { data = await resp.json(); } else { data = { error: await resp.text() }; }
