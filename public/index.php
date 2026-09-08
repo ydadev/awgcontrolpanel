@@ -866,12 +866,33 @@ Router::post('/servers/create', function () {
 // Delete server action
 Router::post('/servers/{id}/delete', function ($params) {
     requireAdmin();
+
+    if (!Csrf::validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo 'Invalid CSRF token';
+        return;
+    }
+
     $user = Auth::user();
     $serverId = (int) $params['id'];
 
     try {
         $server = new VpnServer($serverId);
         $serverData = $server->getData();
+
+        $confirmation = trim((string) ($_POST['confirm_server'] ?? ''));
+        $serverName = trim((string) ($serverData['name'] ?? ''));
+        if ($serverName === '' || $confirmation === '' || !hash_equals($serverName, $confirmation)) {
+            http_response_code(400);
+            echo 'Server confirmation does not match';
+            return;
+        }
+
+        Logger::appendInstall(
+            $serverId,
+            'DELETE_SERVER requested actor_user_id=' . (int) ($user['id'] ?? 0)
+            . ' remote_addr=' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
 
         $server->delete();
         $_SESSION['success_message'] = 'Server deleted successfully';
@@ -1450,22 +1471,6 @@ Router::post('/servers/{id}/config/import', function ($params) {
     }
 
     redirect('/servers/' . $serverId);
-});
-
-// Delete server
-Router::post('/servers/{id}/delete', function ($params) {
-    requireAdmin();
-    $serverId = (int) $params['id'];
-
-    try {
-        $server = new VpnServer($serverId);
-        $serverData = $server->getData();
-
-        $server->delete();
-        redirect('/servers');
-    } catch (Exception $e) {
-        redirect('/servers');
-    }
 });
 
 // Create client for server
@@ -2406,6 +2411,10 @@ Router::delete('/api/servers/{id}/delete', function ($params) {
         return;
 
     $serverId = (int) $params['id'];
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        $input = [];
+    }
 
     try {
         $server = new VpnServer($serverId);
@@ -2416,6 +2425,20 @@ Router::delete('/api/servers/{id}/delete', function ($params) {
             echo json_encode(['error' => 'Forbidden']);
             return;
         }
+
+        $confirmation = trim((string) ($input['confirm_server'] ?? ''));
+        $serverName = trim((string) ($serverData['name'] ?? ''));
+        if ($serverName === '' || $confirmation === '' || !hash_equals($serverName, $confirmation)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Server confirmation does not match']);
+            return;
+        }
+
+        Logger::appendInstall(
+            $serverId,
+            'API_DELETE_SERVER requested actor_user_id=' . (int) ($user['id'] ?? 0)
+            . ' remote_addr=' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
 
         $server->delete();
         echo json_encode([
