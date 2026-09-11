@@ -1634,7 +1634,7 @@ class VpnClient
     }
 
     /**
-     * Add client to server using wg set (more reliable than syncconf)
+     * Add a client without stopping the server interface.
      */
     public static function addClientToServer(array $serverData, string $publicKey, string $clientIP): void
     {
@@ -1695,66 +1695,27 @@ class VpnClient
         $testConf = trim(self::executeServerCommand($serverData, "docker exec -i {$containerName} cat {$configDir}/{$configFile} 2>/dev/null", true));
         if ($isAwg2 && ($testConf === '' || strpos($testConf, '[Interface]') === false)) {
             $configFile = 'wg0.conf';
+            $testConf = trim(self::executeServerCommand($serverData, "docker exec -i {$containerName} cat {$configDir}/{$configFile} 2>/dev/null", true));
+        }
+        if (strpos($testConf, '[Interface]') === false) {
+            throw new Exception('WireGuard server configuration is unavailable');
         }
         // Interface name matches config filename (wg0.conf -> wg0, awg0.conf -> awg0)
         $ifaceName = str_replace('.conf', '', $configFile);
-
-        // 1. Create temp file for PSK (to avoid shell escaping issues)
-        $pskFile = '/tmp/' . bin2hex(random_bytes(8)) . '.psk';
-        $cmd1 = sprintf("docker exec -i %s sh -c 'echo \"%s\" > %s'", $containerName, $presharedKey, $pskFile);
-        self::executeServerCommand($serverData, $cmd1, true);
-
-        // 2. Add peer using the available WG/AWG userspace tool.
-        $setScript = sprintf(
-            'set -e; tool=$(command -v %s || command -v wg || true); [ -n "$tool" ] || { echo wireguard_tool_not_found; exit 1; }; "$tool" set %s peer %s preshared-key %s allowed-ips %s',
-            $isAwg2 ? 'awg' : 'wg',
-            escapeshellarg($ifaceName),
-            escapeshellarg($publicKey),
-            escapeshellarg($pskFile),
-            escapeshellarg($clientIP . '/32')
-        );
-        $cmd2 = sprintf(
-            "docker exec -i %s sh -lc %s",
-            escapeshellarg($containerName),
-            escapeshellarg($setScript)
-        );
-        self::executeServerCommand($serverData, $cmd2, true);
-
-        // 3. Remove temp PSK file
-        $cmd3 = sprintf("docker exec -i %s rm -f %s", $containerName, $pskFile);
-        self::executeServerCommand($serverData, $cmd3, true);
-
-        // 4. Persist to config file (append)
+        $config = self::removeConflictingPeersFromConfig($testConf, $publicKey, $clientIP);
         $peerBlock = "\n[Peer]\n";
         $peerBlock .= "PublicKey = {$publicKey}\n";
         $peerBlock .= "PresharedKey = {$presharedKey}\n";
         $peerBlock .= "AllowedIPs = {$clientIP}/32\n";
-
-        $escapedBlock = addslashes($peerBlock);
-        $cmd4 = sprintf(
-            "docker exec -i %s sh -c 'echo \"%s\" >> %s/%s && chmod 600 %s/%s'",
-            $containerName,
-            $escapedBlock,
-            $configDir,
-            $configFile,
-            $configDir,
-            $configFile
+        self::syncManagedInterfaceConfig(
+            array_replace($serverData, [
+                'interface_name' => $ifaceName,
+                'config_path' => $configDir . '/' . $configFile,
+                'setconf_path' => $configDir . '/' . $ifaceName . '.setconf',
+            ]),
+            rtrim($config) . $peerBlock
         );
-        self::executeServerCommand($serverData, $cmd4, true);
-
-        // 5. Update clientsTable
         self::updateClientsTable($serverData, $publicKey, $clientIP);
-
-        // 6. CRITICAL: Reload WG interface to apply AWG obfuscation params
-        // Without this, the interface uses standard WireGuard without Jc/S1/S2/H1-H4
-        $reloadScript = sprintf(
-            'set -e; ip link del %s 2>/dev/null || true; quick=$(command -v %s || command -v wg-quick || true); [ -n "$quick" ] || { echo wireguard_quick_tool_not_found; exit 1; }; "$quick" up %s 2>&1',
-            escapeshellarg($ifaceName),
-            $isAwg2 ? 'awg-quick' : 'wg-quick',
-            escapeshellarg($configDir . '/' . $configFile)
-        );
-        $cmd5 = sprintf("docker exec -i %s sh -lc %s", escapeshellarg($containerName), escapeshellarg($reloadScript));
-        self::executeServerCommand($serverData, $cmd5, true);
     }
 
     private static function usesManagedExistingInterface(array $serverData): bool
@@ -2479,65 +2440,21 @@ class VpnClient
         $testConf = trim(self::executeServerCommand($serverData, "docker exec -i {$containerName} cat {$configDir}/{$configFile} 2>/dev/null", true));
         if ($isAwg2 && ($testConf === '' || strpos($testConf, '[Interface]') === false)) {
             $configFile = 'wg0.conf';
+            $testConf = trim(self::executeServerCommand($serverData, "docker exec -i {$containerName} cat {$configDir}/{$configFile} 2>/dev/null", true));
+        }
+        if (strpos($testConf, '[Interface]') === false) {
+            throw new Exception('WireGuard server configuration is unavailable');
         }
         $ifaceName = str_replace('.conf', '', $configFile);
-        // First, remove using the available WG/AWG userspace tool (live removal)
-        $removeScript = sprintf(
-            'set -e; tool=$(command -v %s || command -v wg || true); [ -n "$tool" ] || { echo wireguard_tool_not_found; exit 1; }; "$tool" set %s peer %s remove',
-            $isAwg2 ? 'awg' : 'wg',
-            escapeshellarg($ifaceName),
-            escapeshellarg($publicKey)
+        $newConfig = self::removePeerFromConfig($testConf, $publicKey);
+        self::syncManagedInterfaceConfig(
+            array_replace($serverData, [
+                'interface_name' => $ifaceName,
+                'config_path' => $configDir . '/' . $configFile,
+                'setconf_path' => $configDir . '/' . $ifaceName . '.setconf',
+            ]),
+            $newConfig
         );
-        $removeCmd = sprintf(
-            "docker exec -i %s sh -lc %s",
-            escapeshellarg($containerName),
-            escapeshellarg($removeScript)
-        );
-
-        self::executeServerCommand($serverData, $removeCmd, true);
-
-        // Then remove from config file to make it persistent
-        // Use a more reliable method: read, filter, write
-        $readCmd = sprintf("docker exec -i %s cat %s/%s", $containerName, $configDir, $configFile);
-        $config = self::executeServerCommand($serverData, $readCmd, true);
-
-        // Parse and remove the peer section
-        $newConfig = self::removePeerFromConfig($config, $publicKey);
-
-        // Write back to file
-        $escapedConfig = str_replace("'", "'\\''", $newConfig);
-        $writeCmd = sprintf(
-            "docker exec -i %s sh -c 'echo '\''%s'\'' > %s/%s && chmod 600 %s/%s'",
-            $containerName,
-            $escapedConfig,
-            $configDir,
-            $configFile,
-            $configDir,
-            $configFile
-        );
-
-        self::executeServerCommand($serverData, $writeCmd, true);
-
-        // Save config
-        $saveScript = sprintf(
-            'set -e; quick=$(command -v %s || command -v wg-quick || true); [ -n "$quick" ] || { echo wireguard_quick_tool_not_found; exit 1; }; "$quick" save %s',
-            $isAwg2 ? 'awg-quick' : 'wg-quick',
-            escapeshellarg($ifaceName)
-        );
-        $saveCmd = sprintf("docker exec -i %s sh -lc %s", escapeshellarg($containerName), escapeshellarg($saveScript));
-        self::executeServerCommand($serverData, $saveCmd, true);
-        self::executeServerCommand(
-            $serverData,
-            sprintf(
-                'docker exec -i %s chmod 600 %s/%s',
-                escapeshellarg($containerName),
-                escapeshellarg($configDir),
-                escapeshellarg($configFile)
-            ),
-            true
-        );
-
-        // Remove from clientsTable
         self::removeFromClientsTable($serverData, $publicKey);
     }
 
@@ -2546,45 +2463,24 @@ class VpnClient
      */
     private static function removePeerFromConfig(string $config, string $publicKey): string
     {
-        $lines = explode("\n", $config);
-        $newLines = [];
-        $inPeerBlock = false;
-        $skipBlock = false;
-
-        foreach ($lines as $line) {
-            $trimmed = trim($line);
-
-            // Start of new section
-            if (strpos($trimmed, '[') === 0) {
-                $inPeerBlock = ($trimmed === '[Peer]');
-                $skipBlock = false;
-            }
-
-            // Check if this peer block should be skipped
-            if ($inPeerBlock && strpos($trimmed, 'PublicKey') === 0) {
-                $parts = explode('=', $line, 2);
-                if (count($parts) === 2 && trim($parts[1]) === $publicKey) {
-                    $skipBlock = true;
-                    // Remove the [Peer] line that was already added
-                    array_pop($newLines);
-                    continue;
-                }
-            }
-
-            // Skip lines in the block to be removed
-            if ($skipBlock && $inPeerBlock) {
-                // Empty line ends the peer block
-                if (empty($trimmed)) {
-                    $skipBlock = false;
-                    $inPeerBlock = false;
-                }
+        $publicKey = trim($publicKey);
+        if ($publicKey === '') {
+            throw new InvalidArgumentException('Refusing to remove a peer with an empty public key');
+        }
+        // A peer ends at the next section, not at a blank line or comment.
+        $sections = preg_split('/(?=^[ \t]*\[[^\]\r\n]+\][ \t]*\r?$)/m', $config) ?: [$config];
+        $kept = [];
+        foreach ($sections as $section) {
+            if (
+                preg_match('/^[ \t]*\[Peer\][ \t]*\r?$/m', $section)
+                && preg_match('/^[ \t]*PublicKey[ \t]*=[ \t]*(.+?)[ \t]*\r?$/mi', $section, $match)
+                && trim($match[1]) === $publicKey
+            ) {
                 continue;
             }
-
-            $newLines[] = $line;
+            $kept[] = $section;
         }
-
-        return implode("\n", $newLines);
+        return implode('', $kept);
     }
 
     /**

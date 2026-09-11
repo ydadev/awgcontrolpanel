@@ -43,6 +43,42 @@ if (!str_contains($filtered, 'retained-peer') || !str_contains($filtered, '[Inte
     exit(1);
 }
 
+$removeMethod = new ReflectionMethod(VpnClient::class, 'removePeerFromConfig');
+$removeMethod->setAccessible(true);
+$interfaceBlock = "[Interface]\nPrivateKey = server-key\nJc = 3\nS1 = 225\n\n";
+$retainedBlock = "[Peer]\nPublicKey = keep-key\nPresharedKey = keep-psk\nAllowedIPs = 192.0.2.3/32\n";
+$removedBlocks = [
+    "[Peer]\n\nPublicKey = remove-key\nAllowedIPs = 192.0.2.2/32\n\n",
+    "[Peer]\n# device comment\nPublicKey = remove-key\n\nPresharedKey = remove-psk\nAllowedIPs = 192.0.2.2/32\n",
+    "[Peer]\nPresharedKey = remove-psk\nAllowedIPs = 192.0.2.2/32\nPublicKey = remove-key\n",
+    "  [Peer]\n\tPublicKey = remove-key\nAllowedIPs = 192.0.2.2/32\n",
+];
+foreach ($removedBlocks as $index => $removedBlock) {
+    foreach (["\n", "\r\n"] as $newline) {
+        $input = str_replace("\n", $newline, $interfaceBlock . $removedBlock . $retainedBlock);
+        $expected = str_replace("\n", $newline, $interfaceBlock . $retainedBlock);
+        $actual = $removeMethod->invoke(null, $input, 'remove-key');
+        if ($actual !== $expected) {
+            fwrite(STDERR, "Peer removal case {$index} left an orphaned section or changed another peer\n");
+            exit(1);
+        }
+        if ($removeMethod->invoke(null, $input, 'absent-key') !== $input) {
+            fwrite(STDERR, "Removing an absent peer changed the configuration\n");
+            exit(1);
+        }
+    }
+}
+if ($removeMethod->invoke(null, $interfaceBlock . $retainedBlock, 'keep-key') !== $interfaceBlock) {
+    fwrite(STDERR, "Removing the last peer damaged the interface section\n");
+    exit(1);
+}
+try {
+    $removeMethod->invoke(null, $config, '');
+    fwrite(STDERR, "Peer removal accepted an empty public key\n");
+    exit(1);
+} catch (InvalidArgumentException $expected) {
+}
+
 $runtimeMethod = new ReflectionMethod(VpnClient::class, 'applyProtocolServerData');
 $runtimeMethod->setAccessible(true);
 $serverData = $runtimeMethod->invoke(
