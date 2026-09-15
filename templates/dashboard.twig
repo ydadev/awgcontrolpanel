@@ -610,7 +610,7 @@ if (dashboardConnectionForm) {
         const enabled = Boolean(server && server.local_bypass_enabled && protocol && protocol.wireguard);
         dashboardBypassOption.classList.toggle('hidden', !enabled);
         dashboardBypassCheckbox.disabled = !enabled;
-        dashboardBypassCheckbox.checked = enabled;
+        dashboardBypassCheckbox.checked = false;
     }
 
     function populateDashboardProtocols() {

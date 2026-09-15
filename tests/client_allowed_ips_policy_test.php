@@ -132,9 +132,18 @@ $serverView = file_get_contents(__DIR__ . '/../templates/servers/view.twig');
 if (
     !is_string($serverView)
     || strpos($serverView, 'name="local_network_bypass"') === false
-    || !preg_match('/<input[^>]+name="local_network_bypass"[^>]+checked(?:\s|>)/i', $serverView)
+    || preg_match('/<input[^>]+name="local_network_bypass"[^>]+checked(?:\s|>)/i', $serverView)
 ) {
-    failAllowedIpsTest('Local network bypass is not enabled by default');
+    failAllowedIpsTest('Local network bypass must be available but unchecked by default');
+}
+
+$dashboardView = file_get_contents(__DIR__ . '/../templates/dashboard.twig');
+if (
+    !is_string($dashboardView)
+    || !str_contains($dashboardView, 'dashboardBypassCheckbox.checked = false;')
+    || str_contains($dashboardView, 'dashboardBypassCheckbox.checked = enabled;')
+) {
+    failAllowedIpsTest('Dashboard local network bypass must be unchecked after selecting a server or protocol');
 }
 
 $canonical = ClientAllowedIpsPolicy::canonicalizeAllowedIpsText("# test\n1.1.1.9/24 -- normalized\n8.8.8.8/32\n// ignored");
